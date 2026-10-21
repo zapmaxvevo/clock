@@ -284,6 +284,21 @@ vacío del owner y `renewWorkspace` se corta.
      pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
      `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
      **Decimoctava sesión** (2026-10-21):
+     **Cierre (2026-10-21 ~15:40 UTC):**
+     - **En producción** (`096aa21`, desplegado a mano por el usuario: Vercel no recibió
+       el aviso de GitHub de los pushes `a65f717` y `096aa21`; revisar en Settings → Git
+       que el repo siga conectado): WS2a (`0020` aplicada, control OK), WS2b y el MCP para
+       owner y admin (`list_people`, `summarize_hours`, ADR 0030; lotes JSON-RPC
+       rechazados con 400). Humo OK. **P-07 cumplido:** el workspace «RunOne» pasó a
+       completo el 2026-10-21 15:22 UTC (pantallas y CSV OK según el usuario).
+     - Producción tiene **un solo workspace**, «RunOne»; «run0km» y «soybot» son los
+       dominios de correo (corregido en `a65f717`).
+     - Falta: el CI de `096aa21` (estaba corriendo al cierre) y, de ahí en más, el roadmap
+       sigue con **E3** (transferir la propiedad), después E4 (que suma `weekStart` al
+       `settingChangeOf` de WS2b).
+     - Bases locales que se pueden borrar: `clock_ws2a_*`, `clock_ws2b_*`, `clock_mcpe_*`,
+       `clock_mcp_*`; hay unas 196 `clock_*` y los checkpoints de Postgres se volvieron
+       lentos (un `drop database` tardó minutos).
      - **MCP en producción.** El usuario corrió en Neon `main` el bloque de la `0019`; el
        control dio `1792540623295 | 20 | fcf1b85b… | 9 | 1 | 0` (una primera corrida, por
        error, fue en la rama `preview`: 10 constancias con cliente, de las pruebas de V-7).
