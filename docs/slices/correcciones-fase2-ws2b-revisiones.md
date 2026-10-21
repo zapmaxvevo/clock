@@ -183,7 +183,8 @@ de la rama). Filtrar por archivo no recorta `chromium`, que corrió entero:
   el total del reporte de un admin suma las horas de todo el workspace
   («69:19:17» en lugar de «00:03:20»). Avisado a `e2e-tester`. Los otros
   cuatro, que el modo serial salteó, pasan con `--no-deps` y
-  `--grep-invert`: 4 verdes.
+  `--grep-invert`: 4 verdes. `e2e-tester` corrigió el spec en `41ffa14`: afirma
+  la fila de la persona, con un nombre propio, en el agrupado por persona.
 
 ## Comprobaciones del árbol
 
