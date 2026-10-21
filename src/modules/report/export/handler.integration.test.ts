@@ -13,6 +13,7 @@ import {
   seedTimeEntry,
   seedUser,
   seedWorkspace,
+  setDurationFormat,
   type SeededWorkspace,
 } from "@/test/factories";
 import { pdfPageTexts, type PdfPageText } from "@/test/pdf";
@@ -481,6 +482,70 @@ describe("las personas sin horas en el archivo (D-R9-10; criterio 15 de R9)", ()
     expect(allTextOf(pages)).not.toContain("Personas sin horas");
     expect(allTextOf(pages)).not.toContain("Otra Persona");
     expect(pages.flatMap((page) => page.rows)).toContain("1 Member 1:00 1,00");
+  });
+});
+
+describe("el formato de duración del workspace (D-WS2b-9, WS-17, WS-69; criterio 10 de WS2b)", () => {
+  /** Dos entradas de 100 segundos el martes 29/09, a las 10:00 y a las 11:00 de Buenos Aires. */
+  async function seedTwoShort(userId: string) {
+    for (const [hour, description] of [
+      ["13", "Corta de las 10"],
+      ["14", "Corta de las 11"],
+    ]) {
+      await seedTimeEntry({
+        workspaceId: seeded.workspaceId,
+        userId,
+        description,
+        startedAt: `2026-09-29T${hour}:00:00Z`,
+        endedAt: `2026-09-29T${hour}:01:40Z`,
+      });
+    }
+  }
+
+  it("el CSV en completo trae «Duración» en `hh:mm:ss` y las mismas horas que en compacto", async () => {
+    const memberId = await signInAs();
+    await seedTwoShort(memberId);
+    vi.useFakeTimers({ toFake: ["Date"], now: fakeNow });
+
+    const compact = await textOf(await exportOf(weekQuery));
+    await setDurationFormat(seeded.workspaceId, "full");
+    const full = await textOf(await exportOf(weekQuery));
+
+    expect(compact).toContain('"Total";"0:03";"0,05"');
+    expect(full).toContain('"Total";"00:03:20";"0,05"');
+    expect(full).toContain('"Corta de las 10";"";"No";"00:01:40";"0,01"');
+    // Lo único que cambia es «Duración»: las filas, su orden y «Horas» son los mismos.
+    expect(full).toBe(
+      compact
+        .replaceAll('"0:03"', '"00:03:20"')
+        .replaceAll('"0:01"', '"00:01:40"')
+        .replaceAll('"0:00"', '"00:00:00"'),
+    );
+  });
+
+  it("el Excel en completo guarda los segundos con `[hh]:mm:ss`", async () => {
+    const memberId = await signInAs();
+    await seedTwoShort(memberId);
+    await setDurationFormat(seeded.workspaceId, "full");
+
+    const sheet = await sheetOf(await exportAs("xlsx", weekQuery), exportLabels.entries);
+    const durations: { value: unknown; numFmt: string }[] = [];
+    sheet.eachRow((row) =>
+      row.eachCell((cell) => {
+        if (cell.numFmt === "[hh]:mm:ss") {
+          durations.push({ value: cell.value, numFmt: cell.numFmt });
+        }
+      }),
+    );
+
+    // El total, el facturable y las dos entradas; la biblioteca devuelve un `Date`.
+    expect(durations).toHaveLength(4);
+    expect(durations.map(({ value }) => value instanceof Date)).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 });
 

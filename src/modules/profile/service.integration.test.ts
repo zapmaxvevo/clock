@@ -575,6 +575,25 @@ describe("getProfileView (criterios 15 y 17)", () => {
     expect(getProfileView(await contextFor(userId), user, now).weekStart).toBe(6);
   });
 
+  it("el formato de duración es el del workspace, de `context.settings` (PF-31, D-WS2b-7)", async () => {
+    const context = await contextFor(userId);
+    const full: ProfileContext = { ...context, settings: { durationFormat: "full" } };
+
+    expect(getProfileView(context, user, now).durationFormat).toBe("compact");
+    expect(getProfileView(full, user, now).durationFormat).toBe("full");
+    expect(getProfileView(full, user, now).preferences).toEqual(
+      getProfileView(context, user, now).preferences,
+    );
+  });
+
+  it("el formato guardado en la fila de ajustes llega a la vista por la sesión", async () => {
+    await setDurationFormat(workspaceId, "full");
+
+    expect(getProfileView(await contextFor(userId), user, now).durationFormat).toBe(
+      "full",
+    );
+  });
+
   it("canEdit es verdadero con la membresía activa y falso con una inactive o invited (PF-46)", async () => {
     expect(getProfileView(await contextFor(userId), user, now).canEdit).toBe(true);
     for (const status of ["inactive", "invited"] as const) {

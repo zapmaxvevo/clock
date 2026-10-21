@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
-import { membership, workspace } from "@/server/db/schema";
+import { membership, workspace, workspaceSettings } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
 import {
   seedInvitation,
@@ -457,6 +457,168 @@ describe("updateWorkspaceName (WS1, §4.5)", () => {
     expect(await workspaceRow()).toEqual(saved);
     expect(await nameAudits()).toEqual([
       expect.objectContaining({ action: "workspace.updateName" }),
+    ]);
+  });
+});
+
+describe("updateWorkspaceSetting (WS2b, §4.6)", () => {
+  async function settingsRow() {
+    const [row] = await db
+      .select()
+      .from(workspaceSettings)
+      .where(eq(workspaceSettings.workspaceId, seeded.workspaceId));
+    return row;
+  }
+
+  async function settingAudits() {
+    return auditFor("workspace_settings", seeded.workspaceId);
+  }
+
+  const toFull = { key: "durationFormat", value: "full" } as const;
+
+  it("sin sesión manda al login sin escribir", async () => {
+    const before = await settingsRow();
+
+    await expect(actions.updateWorkspaceSetting(toFull)).rejects.toBeInstanceOf(
+      RedirectError,
+    );
+
+    expect(mocks.redirects).toEqual(["/login"]);
+    expect(await settingsRow()).toEqual(before);
+    expect(await settingAudits()).toEqual([]);
+  });
+
+  it("el éxito responde los ajustes y revalida el árbol entero (criterio 9, WS-64)", async () => {
+    const adminId = await signInAs("admin");
+
+    const result = await actions.updateWorkspaceSetting(toFull);
+
+    expect(result).toEqual({ ok: true, data: { settings: { durationFormat: "full" } } });
+    expect((await settingsRow())?.durationFormat).toBe("full");
+    expect(await settingAudits()).toEqual([
+      expect.objectContaining({ action: "workspace.updateSetting", actorId: adminId }),
+    ]);
+    expect(mocks.revalidated).toEqual([{ path: "/", type: "layout" }]);
+  });
+
+  it("el mismo formato responde éxito sin escribir (criterio 2, WS-04)", async () => {
+    await signInAs("owner");
+    const before = await settingsRow();
+
+    const result = await actions.updateWorkspaceSetting({
+      key: "durationFormat",
+      value: "compact",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: { settings: { durationFormat: "compact" } },
+    });
+    expect(await settingsRow()).toEqual(before);
+    expect(await settingAudits()).toEqual([]);
+  });
+
+  it.each([
+    ["el decimal", { key: "durationFormat", value: "decimal" }],
+    ["un valor vacío", { key: "durationFormat", value: "" }],
+    ["un número", { key: "durationFormat", value: 1 }],
+    ["un valor nulo", { key: "durationFormat", value: null }],
+    ["sin valor", { key: "durationFormat" }],
+    ["el primer día", { key: "weekStart", value: 1 }],
+    ["una clave que no existe", { key: "foo", value: "full" }],
+    ["sin clave", { value: "full" }],
+    ["un pedido que no es un objeto", "full"],
+  ])(
+    "%s responde validation con WS-56 sin escribir (criterio 3)",
+    async (_case, input) => {
+      await signInAs("owner");
+      const before = await settingsRow();
+
+      const result = await actions.updateWorkspaceSetting(input as never);
+
+      expect(result).toEqual({
+        ok: false,
+        code: "validation",
+        message: workspaceSettingsMessages.formatUnavailable,
+      });
+      expect(await settingsRow()).toEqual(before);
+      expect(await settingAudits()).toEqual([]);
+    },
+  );
+
+  it.each([
+    ["un project_manager", "project_manager", "active"],
+    ["un member", "member", "active"],
+    ["un admin inactivo", "admin", "inactive"],
+  ] as const)(
+    "%s responde forbidden con WS-58, sin escribir, y revalida (criterios 4 y 9)",
+    async (_case, role, status) => {
+      await signInAs(role, status);
+      const before = await settingsRow();
+
+      const result = await actions.updateWorkspaceSetting(toFull);
+
+      expect(result).toEqual({
+        ok: false,
+        code: "forbidden",
+        message: workspaceSettingsMessages.forbidden,
+      });
+      expect(await settingsRow()).toEqual(before);
+      expect(await settingAudits()).toEqual([]);
+      expect(mocks.revalidated).toEqual([{ path: "/", type: "layout" }]);
+    },
+  );
+
+  it("sin la fila de ajustes responde unexpected, no la crea y revalida (criterios 8 y 9, WS-73)", async () => {
+    await signInAs("owner");
+    await db
+      .delete(workspaceSettings)
+      .where(eq(workspaceSettings.workspaceId, seeded.workspaceId));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await actions.updateWorkspaceSetting(toFull);
+
+    expect(result).toEqual({
+      ok: false,
+      code: "unexpected",
+      message: workspaceSettingsMessages.unexpected,
+    });
+    expect(await settingsRow()).toBeUndefined();
+    expect(await settingAudits()).toEqual([]);
+    expect(mocks.revalidated).toEqual([{ path: "/", type: "layout" }]);
+  });
+
+  it("una falla inesperada responde unexpected con su texto y no escribe", async () => {
+    await signInAs("owner");
+    const before = await settingsRow();
+    vi.spyOn(workspaceRepository, "updateWorkspaceSettings").mockRejectedValueOnce(
+      new Error("se cayó la base"),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await actions.updateWorkspaceSetting(toFull);
+
+    expect(result).toEqual({
+      ok: false,
+      code: "unexpected",
+      message: workspaceSettingsMessages.unexpected,
+    });
+    expect(await settingsRow()).toEqual(before);
+    expect(await settingAudits()).toEqual([]);
+  });
+
+  it("reintentar después de una respuesta perdida responde éxito y deja una sola constancia (WS-62)", async () => {
+    await signInAs("admin");
+
+    const first = await actions.updateWorkspaceSetting(toFull);
+    const saved = await settingsRow();
+    const retried = await actions.updateWorkspaceSetting(toFull);
+
+    expect(first).toEqual({ ok: true, data: { settings: { durationFormat: "full" } } });
+    expect(retried).toEqual(first);
+    expect(await settingsRow()).toEqual(saved);
+    expect(await settingAudits()).toEqual([
+      expect.objectContaining({ action: "workspace.updateSetting" }),
     ]);
   });
 });
