@@ -179,8 +179,16 @@ tope de 500 filas.**
 statement_timeout` de 8 s (`REPORT_EXPORT_STATEMENT_TIMEOUT_MS`, S3 de
   `correcciones-nucleo-reportes-r6a-revisiones.md`). Un asistente se parece
   más a una exportación que a una persona: puede pedir un año en tres niveles
-  varias veces por minuto, sin mirar. El tope vale para toda la transacción del
-  resumido.
+  varias veces por minuto, sin mirar. El tope rige en toda la transacción del
+  resumido, **por sentencia**: un resumido corre unas siete (los catálogos,
+  hasta tres niveles y el total), así que la cota total es la suma.
+- **Sin `transaction_timeout`** (revisión de seguridad, menor): Postgres 17 o
+  posterior lo soporta (18.6 en local), pero al vencer no cancela con `57014`:
+  termina la conexión con `FATAL 25P04`. Por drizzle con node-postgres llega
+  el fallo del `rollback` («Connection terminated unexpectedly», sin código),
+  que no se puede traducir, y el cliente de `pg` emite además una excepción no
+  atrapada. Una cota total, si hace falta, es un plazo en la aplicación que
+  achique el `statement_timeout` de cada lectura a lo que queda.
 - **Un tope vencido no es `unexpected`**: Postgres cancela la sentencia con
   `57014`, y `getHoursSummary` lo responde como `ReportError("timeout",
 summaryTooSlow)`, que pide un período más corto, menos niveles o menos
@@ -189,7 +197,8 @@ summaryTooSlow)`, que pide un período más corto, menos niveles o menos
   sale con `chart: null`, que la herramienta no devuelve. Una consulta menos
   por llamada.
 - **El costo que queda**: los dos catálogos, hasta tres niveles y el total, en
-  una transacción de solo lectura, acotados por las 500 filas y los 8 s.
+  una transacción de solo lectura, acotados por las 500 filas y los 8 s de cada
+  sentencia.
 
 **D-MCPE-7 — Una lectura no deja constancia.** Ni la página de reportes ni sus
 exportaciones escriben en `audit_log`, y D-MCP-12 dejó fuera los pedidos de
