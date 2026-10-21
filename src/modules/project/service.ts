@@ -520,6 +520,33 @@ function clientOf<Client extends ClientView>(
   return found;
 }
 
+/** Las etiquetas activas en orden alfabético; ninguna sin `tag.view` (PR-62). */
+async function readVisibleTags(tx: Transaction, actor: Actor): Promise<TagRef[]> {
+  if (!can(actor, "tag.view", workspaceResource(actor))) {
+    return [];
+  }
+  return sortedByName(await projectRepository.listActiveTags(tx, actor.workspaceId)).map(
+    toTagRef,
+  );
+}
+
+/**
+ * Las tareas de cada proyecto de `projects`, en orden alfabético. Las de un
+ * proyecto que no está en la lista no salen del service.
+ */
+function tasksByProject(
+  projects: readonly ProjectRow[],
+  tasks: readonly TaskRow[],
+): ReadonlyMap<string, readonly TaskView[]> {
+  const byProject = new Map<string, TaskRow[]>(projects.map((row) => [row.id, []]));
+  for (const row of tasks) {
+    byProject.get(row.projectId)?.push(row);
+  }
+  return new Map(
+    [...byProject].map(([id, rows]) => [id, sortedByName(rows).map(toTaskView)]),
+  );
+}
+
 type CatalogRead<Project> = {
   /** Todos los clientes del workspace, archivados incluidos. */
   readonly clients: readonly ClientRow[];
@@ -550,9 +577,7 @@ async function readCatalog<Project>(
         actor.userId,
       ),
       tasks: await projectRepository.listActiveTasks(tx, actor.workspaceId),
-      tags: can(actor, "tag.view", workspaceResource(actor))
-        ? await projectRepository.listActiveTags(tx, actor.workspaceId)
-        : [],
+      tags: await readVisibleTags(tx, actor),
     }),
     { isolationLevel: "repeatable read" },
   );
@@ -560,16 +585,11 @@ async function readCatalog<Project>(
   const allowed = read.projects.filter((row) =>
     can(actor, "project.track", projectResource(row)),
   );
-  // Las tareas de un proyecto descartado no salen del service.
-  const tasksByProject = new Map<string, TaskRow[]>(allowed.map((row) => [row.id, []]));
-  for (const row of read.tasks) {
-    tasksByProject.get(row.projectId)?.push(row);
-  }
+  const tasks = tasksByProject(allowed, read.tasks);
   const byClient = new Map<string | null, Project[]>();
   for (const row of sortedByName(allowed)) {
-    const tasks = sortedByName(tasksByProject.get(row.id) ?? []).map(toTaskView);
     const group = byClient.get(row.clientId) ?? [];
-    group.push(toProject(row, tasks));
+    group.push(toProject(row, tasks.get(row.id) ?? []));
     byClient.set(row.clientId, group);
   }
   // Un cliente sin proyectos que mostrar no forma grupo (PR-62).
@@ -580,7 +600,7 @@ async function readCatalog<Project>(
 
   return {
     clients: read.clients,
-    tags: sortedByName(read.tags).map(toTagRef),
+    tags: read.tags,
     // «Sin cliente» al final (PR-14, PR-97).
     groups:
       withoutClient === undefined
@@ -604,9 +624,7 @@ export async function getProjectList(actor: Actor): Promise<ProjectListView> {
         actor.userId,
       ),
       tasks: await projectRepository.listActiveTasksOfAllProjects(tx, actor.workspaceId),
-      tags: can(actor, "tag.view", workspaceResource(actor))
-        ? await projectRepository.listActiveTags(tx, actor.workspaceId)
-        : [],
+      tags: await readVisibleTags(tx, actor),
     }),
     { isolationLevel: "repeatable read" },
   );
@@ -620,24 +638,15 @@ export async function getProjectList(actor: Actor): Promise<ProjectListView> {
   const visible = read.projects.filter((row) =>
     can(actor, "project.view", projectResource(row)),
   );
-  // Las tareas de un proyecto que no se ve no salen del service.
-  const tasksByProject = new Map<string, TaskRow[]>(visible.map((row) => [row.id, []]));
-  for (const row of read.tasks) {
-    tasksByProject.get(row.projectId)?.push(row);
-  }
+  const tasks = tasksByProject(visible, read.tasks);
   return {
     canCreateClient: can(actor, "client.create", workspaceResource(actor)),
     canCreateProject: can(actor, "project.create", workspaceResource(actor)),
     canCreateTag: can(actor, "tag.create", workspaceResource(actor)),
-    tags: sortedByName(read.tags).map(toTagRef),
+    tags: read.tags,
     clients: activeClientViews(read.clients),
     projects: sortedByName(visible).map((row) =>
-      toProjectListItem(
-        actor,
-        row,
-        clientOf(row, clientsById),
-        sortedByName(tasksByProject.get(row.id) ?? []).map(toTaskView),
-      ),
+      toProjectListItem(actor, row, clientOf(row, clientsById), tasks.get(row.id) ?? []),
     ),
   };
 }
