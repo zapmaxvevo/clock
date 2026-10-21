@@ -9,7 +9,8 @@ import {
 import type { DurationFormat } from "@/server/time";
 import { bodyRows } from "@/test/markup";
 
-import { durationColumnWidth, REPORT_HEADING_ID, ReportView } from "./report-view";
+import { durationColumnWidth } from "./duration-column";
+import { REPORT_HEADING_ID, ReportView } from "./report-view";
 
 const week = { first: "2026-10-05", last: "2026-10-11" };
 

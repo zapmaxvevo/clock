@@ -9,9 +9,9 @@ import {
   tickAlignOf,
   tickIndexesOf,
 } from "./chart-model";
+import { durationColumnWidth } from "./duration-column";
 import { PartialHeading } from "./group-heading";
 import { chartCaptions, groupByLabels, reportLabels } from "./labels";
-import { durationColumnWidth } from "./report-view";
 
 /**
  * RP-15, D-R5-7 a D-R5-9: el gráfico de barras, nombrado por su leyenda. Arma
