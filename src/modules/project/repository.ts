@@ -4,6 +4,8 @@ import { db, type Transaction } from "@/server/db";
 import { hasConstraint, UNIQUE_VIOLATION } from "@/server/db/constraint-error";
 import { client, project, projectMember, tag, task } from "@/server/db/schema";
 
+import type { ProjectSettingsChanges } from "./changes";
+
 export type ClientRow = typeof client.$inferSelect;
 export type ProjectRow = typeof project.$inferSelect;
 export type TaskRow = typeof task.$inferSelect;
@@ -17,11 +19,6 @@ type Viewer = { readonly isManager: boolean } | null;
 export type ProjectWithViewer = ProjectRow & { readonly viewer: Viewer };
 
 type Executor = Transaction | typeof db;
-
-/** Las columnas que escribe la edición de un proyecto (D-P1-3). */
-export type ProjectChanges = Partial<
-  Pick<ProjectRow, "name" | "clientId" | "color" | "note" | "billableByDefault">
->;
 
 /** El `left join` de la fila de miembro de `userId`, dentro del mismo workspace. */
 function viewerOf(userId: string) {
@@ -213,7 +210,7 @@ export const projectRepository = {
     tx: Transaction,
     workspaceId: string,
     id: string,
-    values: ProjectChanges,
+    values: ProjectSettingsChanges,
   ): Promise<ProjectRow> {
     const rows = await tx
       .update(project)
