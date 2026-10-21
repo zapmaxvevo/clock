@@ -564,3 +564,52 @@ Ningún cliente necesita uno creado de antemano, un campo de metadatos, `GET` ni
 sesiones. En el contrato: D-MCP-2, D-MCP-7 (el 400 de `server/discover`),
 D-MCP-8, V-7, §4.1, §6.3 y los criterios 3 y 20, que se da por cumplido para
 Claude Code, con claude.ai y ChatGPT pendientes por decisión del usuario.
+
+## Cierre para el merge (2026-10-21)
+
+- **La captura temporal, revertida**: `5befdd3` revierte `14c78ac`. El único
+  conflicto fue el import de `user-context` en `mcp-auth.ts`, que después de la
+  captura sumó `SessionContext`; queda ese import sin `captureAuthRequest`.
+  `route.ts` vuelve a ser idéntico al de antes de la captura. En `src/` no
+  queda `mcp-v7` ni `captureMcp`.
+- **El cuerpo capturado de Claude Code**, en el recorrido del criterio 3
+  (`6161fb5`).
+- **Un error no manejado en `team/service.integration.test.ts`**, de E2b y ya
+  en `main` (`a767cdb`). Tres bucles armaban juntas las promesas que se esperan
+  rechazadas, así que corrían a la vez y el rechazo de la segunda llegaba antes
+  de que `failureOf` la esperara. En una de dos corridas de la integración,
+  Vitest contó un `email_released` no manejado con los 2159 tests en verde.
+  Ahora cada una se arma al esperarla.
+
+**La migración en producción.** `0019_mcp` solo suma: nueve tablas y
+`audit_log.oauth_client_id`, nula. El bloque `do` para el editor SQL de Neon
+sale de `node clock-ops/do-block.cjs drizzle 19`. Exige que
+`max(created_at)` sea `1792502701085` (la `0018` de WS0), corre las 40
+sentencias de la `0019` y registra
+`fcf1b85b337ad82c4f990243a3ab45ee64076cb4abc0f6faa890752d4b6f33d0` con
+`1792540623295`. Cómo se probó:
+
+- En `clock_mcp_close_do`, migrada hasta la `0018` con el `drizzle/` de `main`
+  (`467e730`, en un worktree temporal), la consulta previa da `0018`, 19
+  migraciones, 0 tablas y 0 columnas.
+- El bloque aplica todo, y el control da `0019`, 20 migraciones, el hash, 9
+  tablas, la columna nula y 0 constancias con cliente.
+- Un `db:migrate` posterior no aplica nada: siguen 20.
+- Una segunda corrida del bloque frena en la guarda («la última migración
+  aplicada no es la 0018_drop_unused_columns»).
+- El `pg_dump -s` de esa base es igual al de `clock_mcp_close_ref`, migrada
+  con `drizzle-kit` hasta la `0019`.
+
+**Corridas**, con el árbol en `a767cdb`:
+
+- `npm run lint`, `npm run typecheck` y `npx prettier --check .`: limpios.
+- `npm test`: 113 archivos, 2556 tests; `test:time-ar`, 2 archivos, 305 tests.
+- `npm run test:integration` en `clock_mcp_close_int2`, nueva: 41 archivos,
+  2159 tests, sin errores.
+- `npm run build`, con los valores de relleno del CI: compila; `/api/mcp`,
+  `/conectar`, los cuatro `.well-known`, `/configuracion` y `/perfil`,
+  dinámicos. Sigue el aviso del plugin de que no pudo sembrar `resources` sin
+  base.
+- La e2e entera en `clock_mcp_close_e2e`, nueva y migrada, contra `next start`
+  en el puerto 3417 con `E2E_BASE_URL` y `E2E_DATABASE_URL`: 254 pasan,
+  ninguna falla ni se saltea. Las cinco de `mcp.spec.ts` están entre ellas.
