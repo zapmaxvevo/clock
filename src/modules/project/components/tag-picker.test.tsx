@@ -12,6 +12,7 @@ const urgent: TagRef = { id: "t-urgent", name: "Urgente" };
 
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  clients: [],
   canCreateTag: true,
   groups: [],
   tags: [design, review, urgent],

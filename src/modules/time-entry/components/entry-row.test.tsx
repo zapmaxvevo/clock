@@ -11,6 +11,7 @@ import { EntryRow } from "./entry-row";
 
 const catalog: TrackingCatalog = {
   canCreateProject: false,
+  clients: [],
   canCreateTag: false,
   groups: [],
   tags: [],

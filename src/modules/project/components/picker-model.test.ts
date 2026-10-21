@@ -34,6 +34,7 @@ function project(
 
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  clients: [],
   canCreateTag: true,
   tags: [],
   groups: [
@@ -160,6 +161,7 @@ describe("pickerView", () => {
   it("el catálogo sin proyectos da el vacío de TT-87, con el enlace según canCreateProject", () => {
     const empty: TrackingCatalog = {
       canCreateProject: true,
+      clients: [],
       canCreateTag: true,
       tags: [],
       groups: [],
@@ -182,6 +184,7 @@ describe("pickerView", () => {
   it("el catálogo sin proyectos sigue ofreciendo «Sin proyecto», para quitar uno archivado", () => {
     const empty: TrackingCatalog = {
       canCreateProject: false,
+      clients: [],
       canCreateTag: true,
       tags: [],
       groups: [],
@@ -314,6 +317,7 @@ describe("pickerView con `excluded` (TS-18, D13-9)", () => {
   it("con el catálogo sin proyectos gana TT-87 (TS-88), sin «Sin proyecto» si ya es fila", () => {
     const empty: TrackingCatalog = {
       canCreateProject: true,
+      clients: [],
       canCreateTag: true,
       tags: [],
       groups: [],

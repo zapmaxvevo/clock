@@ -42,6 +42,7 @@ const archived = {
 
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  clients: [],
   canCreateTag: true,
   tags: [],
   groups: [

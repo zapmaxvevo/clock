@@ -31,6 +31,7 @@ vi.mock("@/components/ui/dropdown-menu", async (importOriginal) => {
 
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  clients: [],
   canCreateTag: true,
   tags: [],
   groups: [

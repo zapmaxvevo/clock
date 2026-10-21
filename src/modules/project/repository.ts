@@ -5,7 +5,7 @@ import { hasConstraint, UNIQUE_VIOLATION } from "@/server/db/constraint-error";
 import { client, project, projectMember, tag, task } from "@/server/db/schema";
 
 export type ClientRow = typeof client.$inferSelect;
-type ProjectRow = typeof project.$inferSelect;
+export type ProjectRow = typeof project.$inferSelect;
 export type TaskRow = typeof task.$inferSelect;
 type ProjectMemberRow = typeof projectMember.$inferSelect;
 export type TagRow = typeof tag.$inferSelect;
@@ -17,6 +17,11 @@ type Viewer = { readonly isManager: boolean } | null;
 export type ProjectWithViewer = ProjectRow & { readonly viewer: Viewer };
 
 type Executor = Transaction | typeof db;
+
+/** Las columnas que escribe la edición de un proyecto (D-P1-3). */
+export type ProjectChanges = Partial<
+  Pick<ProjectRow, "name" | "clientId" | "color" | "note" | "billableByDefault">
+>;
 
 /** El `left join` de la fila de miembro de `userId`, dentro del mismo workspace. */
 function viewerOf(userId: string) {
@@ -187,6 +192,43 @@ export const projectRepository = {
   },
 
   /**
+   * D-P1-3: bloquea el proyecto `for no key update`, en una sentencia que lee
+   * solo `project`. `true` si existe en el workspace. La fila con la de miembro
+   * se relee después con `findProject`, por la razón de `findByIdForUpdate` de
+   * `time-entry`. `no key update` deja pasar las claves foráneas de
+   * `time_entry`, `task` y `project_member`, que toman `for key share`.
+   */
+  async lockProject(tx: Transaction, workspaceId: string, id: string): Promise<boolean> {
+    const locked = await tx
+      .select({ id: project.id })
+      .from(project)
+      .where(and(eq(project.workspaceId, workspaceId), eq(project.id, id)))
+      .limit(1)
+      .for("no key update");
+    return locked.length > 0;
+  },
+
+  /** D-P1-3: los campos que cambian, ya validados. Devuelve la fila como quedó. */
+  async updateProject(
+    tx: Transaction,
+    workspaceId: string,
+    id: string,
+    values: ProjectChanges,
+  ): Promise<ProjectRow> {
+    const rows = await tx
+      .update(project)
+      .set(values)
+      .where(and(eq(project.workspaceId, workspaceId), eq(project.id, id)))
+      .returning();
+    const updated = rows.at(0);
+    // Con la fila bloqueada no puede pasar.
+    if (updated === undefined) {
+      throw new Error(`El proyecto ${id} no está en el workspace ${workspaceId}.`);
+    }
+    return updated;
+  },
+
+  /**
    * Sin bloqueo. Solo encuentra una tarea creada por `userId` en ese workspace
    * y en ese proyecto: una propia de otro proyecto no se responde, choca con
    * `task_pkey`.
@@ -301,6 +343,20 @@ export const projectRepository = {
         ),
       );
     return rows.map((row) => row.task);
+  },
+
+  /**
+   * D-P1-6: las tareas activas del workspace, también las de los proyectos
+   * archivados. Sin orden: lo pone el service.
+   */
+  async listActiveTasksOfAllProjects(
+    tx: Executor,
+    workspaceId: string,
+  ): Promise<TaskRow[]> {
+    return tx
+      .select()
+      .from(task)
+      .where(and(eq(task.workspaceId, workspaceId), eq(task.status, "active")));
   },
 
   /** Sin bloqueo. Solo encuentra una etiqueta creada por `userId` en ese workspace. */

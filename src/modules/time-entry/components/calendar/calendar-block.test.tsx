@@ -13,6 +13,7 @@ import type { Segment } from "./calendar-layout";
 
 const catalog: TrackingCatalog = {
   canCreateProject: false,
+  clients: [],
   canCreateTag: false,
   groups: [],
   tags: [],

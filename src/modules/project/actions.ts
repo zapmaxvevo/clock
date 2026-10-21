@@ -9,6 +9,7 @@ import {
   createTagInput,
   createTaskInput,
   projectMessages,
+  updateProjectInput,
   type CreateClientInput,
   type CreateClientResult,
   type CreateProjectInput,
@@ -17,14 +18,25 @@ import {
   type CreateTagResult,
   type CreateTaskInput,
   type CreateTaskResult,
+  type UpdateProjectInput,
+  type UpdateProjectResult,
 } from "./schema";
 
-const options = {
-  paths: ["/proyectos"],
-  messages: {
-    forbidden: projectMessages.forbidden,
-    unexpected: projectMessages.unexpected,
-  },
+const messages = {
+  forbidden: projectMessages.forbidden,
+  unexpected: projectMessages.unexpected,
+} as const;
+
+/** Clientes, tareas y etiquetas solo se ven en `/proyectos`. */
+const options = { paths: ["/proyectos"], messages } as const;
+
+/**
+ * D-P1-5: el nombre y el color de un proyecto se ven en todas las pantallas, y
+ * el alta corre también desde el selector del rastreador (TT-09).
+ */
+const projectOptions = {
+  paths: [{ path: "/", type: "layout" }],
+  messages,
 } as const;
 
 // Las cuatro altas: el permiso lo consulta el service antes de `createOnce`
@@ -47,7 +59,7 @@ export async function createProject(
   return handle(
     async (session) =>
       service.createProject(session.actor, createProjectInput.parse(input)),
-    options,
+    projectOptions,
   );
 }
 
@@ -66,5 +78,15 @@ export async function createTag(
   return handle(
     async (session) => service.createTag(session.actor, createTagInput.parse(input)),
     options,
+  );
+}
+
+export async function updateProject(
+  input: UpdateProjectInput,
+): Promise<ActionResult<UpdateProjectResult>> {
+  return handle(
+    async (session) =>
+      service.updateProject(session.actor, updateProjectInput.parse(input)),
+    projectOptions,
   );
 }

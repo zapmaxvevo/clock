@@ -20,6 +20,7 @@ const actions: ProjectActions = {
   createProject: () => unreachable(),
   createTask: () => unreachable(),
   createTag: () => unreachable(),
+  updateProject: () => unreachable(),
 };
 
 const emptyCatalog: ProjectCatalog = {

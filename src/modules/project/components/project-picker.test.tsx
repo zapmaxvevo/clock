@@ -8,6 +8,7 @@ import { TrackingCatalogProvider } from "./tracking-catalog";
 
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  clients: [],
   canCreateTag: true,
   tags: [],
   groups: [

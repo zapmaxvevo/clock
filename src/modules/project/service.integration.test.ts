@@ -617,13 +617,14 @@ describe("reintentar (criterio 10: §4.4, PR-90, PR-91, PR-108)", () => {
     expect(await auditFor("client", values.id)).toHaveLength(1);
   });
 
-  it("repetir un proyecto con el mismo id devuelve la misma vista, sin tareas y sin escribir", async () => {
+  it("repetir un proyecto con el mismo id devuelve la misma referencia sin escribir (D-P1-12)", async () => {
     const values = projectValues();
     const first = await createProject(member, values);
-    await seedTask({ workspaceId, projectId: values.id });
     const again = await createProject(member, values);
     expect(again).toEqual(first);
-    expect(again.project.canCreateTask).toBe(true);
+    expect(again).toEqual({
+      project: { id: values.id, name: values.name, color: expect.any(String) },
+    });
     expect(await projectRows()).toHaveLength(1);
     expect(await db.select().from(projectMember)).toHaveLength(1);
     expect(await auditFor("project", values.id)).toHaveLength(1);
