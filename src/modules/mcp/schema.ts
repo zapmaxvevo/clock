@@ -218,9 +218,12 @@ export const startTimerToolOutput = z.object({
 });
 export const stopTimerToolOutput = z.object({ stopped: toolEntry });
 
+/** D-MCPE-2: `everyone` si se ve a todas las personas; `self`, solo lo propio. */
+const summaryScope = z.enum(["everyone", "self"]);
+
 /** D-MCPE-5: lo común a un grupo de cualquier nivel. */
 const summaryGroupFields = {
-  kind: z.enum(REPORT_GROUP_BYS),
+  kind: groupBy,
   /**
    * El id de la persona, el proyecto, el cliente, la tarea, la etiqueta o el
    * hash de la descripción; el primer día del tramo (AAAA-MM-DD) en date, week
@@ -249,8 +252,7 @@ export const summarizeHoursToolOutput = z.object({
   timezone: z.string(),
   from: z.string(),
   to: z.string(),
-  /** `everyone` si se ve a todas las personas; `self`, solo lo propio. */
-  scope: z.enum(["everyone", "self"]),
+  scope: summaryScope,
   groupBy,
   subgroups: z.array(groupBy),
   /** Los niveles que entraron en el tope: menos que los pedidos si no (D-R3-6). */
@@ -261,7 +263,7 @@ export const summarizeHoursToolOutput = z.object({
 });
 
 export const listPeopleToolOutput = z.object({
-  scope: z.enum(["everyone", "self"]),
+  scope: summaryScope,
   people: z.array(
     z.object({
       id: z.string(),

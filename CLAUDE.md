@@ -50,7 +50,7 @@ src/
     service.ts         reglas de negocio
     repository.ts      consultas Drizzle, único lugar con acceso a datos
     actions.ts         server actions del módulo
-    operations.ts      Zod, can() y service de una operación que comparten action y herramienta MCP
+    operations.ts      Zod, can() y service de la operación de una herramienta MCP, compartida con la action si la hay
     components/        interfaz del módulo
     *.test.ts
   server/

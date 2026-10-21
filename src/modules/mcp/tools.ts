@@ -186,7 +186,11 @@ export function summaryOf(report: ReportReadyState): SummarizeHoursToolOutput {
   };
 }
 
-/** D-MCPE-2: el catálogo de personas, campo por campo. */
+/**
+ * D-MCPE-2: el catálogo de personas, campo por campo: una lista blanca, para
+ * que un campo que `PeopleCatalogPerson` sume no llegue al asistente sin un
+ * cambio acá.
+ */
 export function peopleListOf(catalog: PeopleCatalog): ListPeopleToolOutput {
   return {
     scope: catalog.scope,
