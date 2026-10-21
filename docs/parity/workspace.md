@@ -380,8 +380,8 @@ compacto, cambiar la regla es un ADR nuevo. La interpretación de lo que se
 teclea no cambia entre los dos formatos (PF-21, WS-67).
 _Corregido el 2026-10-20, WS2a_: la regla estaba pendiente de workspace P-09, y
 el texto decía que la fijaba el contrato del slice. La fija el ADR 0029, con el
-[contrato de WS2a](../slices/fase2-ws2a-formato.md) (D-WS2a-5); el ADR está
-propuesto y es la pregunta 1 de ese contrato.
+[contrato de WS2a](../slices/fase2-ws2a-formato.md) (D-WS2a-5); el usuario
+aceptó el ADR el 2026-10-20 (pregunta 1 de ese contrato).
 
 **WS-17 Dónde se aplica** — `replicar`
 Documentado: «Your time will be displayed in full formatting across the entire

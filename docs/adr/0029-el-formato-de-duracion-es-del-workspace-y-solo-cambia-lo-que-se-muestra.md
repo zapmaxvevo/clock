@@ -1,6 +1,6 @@
 # 0029. El formato de duración es del workspace y solo cambia lo que se muestra
 
-Fecha: 2026-10-20. Estado: Propuesto.
+Fecha: 2026-10-20. Estado: Aceptado (2026-10-20, por el usuario).
 Origen: el contrato de WS2a
 ([`fase2-ws2a-formato.md`](../slices/fase2-ws2a-formato.md)), con el
 [mapa de la fase 2](../slices/fase2-mapa.md) («WS2a», §4),

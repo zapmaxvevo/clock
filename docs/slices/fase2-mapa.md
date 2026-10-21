@@ -473,7 +473,8 @@ WS2a.
 _Corregido el 2026-10-20, WS2a_: el riesgo de la regla del compacto decía que
 el ADR iba a fijarla. La fija el
 [ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md),
-propuesto con el [contrato de WS2a](fase2-ws2a-formato.md) (D-WS2a-5).
+propuesto con el [contrato de WS2a](fase2-ws2a-formato.md) (D-WS2a-5) y
+aceptado por el usuario el 2026-10-20.
 
 ### WS2b — Formato de duración: el selector y el reporte
 
@@ -764,7 +765,8 @@ _Actualizado el 2026-10-20, E2b_: la fila de E2b nombra el
 usuario el 2026-10-19, y cuenta tres importadas en lugar de seis (§2).
 _Corregido el 2026-10-20, WS2a_: la fila de WS2a nombra el
 [ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md),
-propuesto con el [contrato de WS2a](fase2-ws2a-formato.md).
+propuesto con el [contrato de WS2a](fase2-ws2a-formato.md) y aceptado por el
+usuario el 2026-10-20.
 
 ## 5. Antes del primer contrato
 

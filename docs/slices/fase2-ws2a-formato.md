@@ -1276,6 +1276,8 @@ La corrida que vale para el registro es la entera, sin `--no-deps` (criterio
    número cambia, y el caso que la distingue solo se ve con el compacto. Si la
    verificación de workspace P-09 (punto 7) muestra otra cosa en Clockify, se
    cambia con un ADR nuevo.
+   **Respuesta del usuario (2026-10-20): aceptado.**
+
 2. **¿`workspace.name` lleva los `check` de los demás nombres en la `0019`?**
    `char_length(name) between 1 and 100` y `name = btrim(name)`, la pregunta 1
    de WS1. **Recomendación: sí, en la `0019`.** Son compatibles con todo
