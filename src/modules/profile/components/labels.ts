@@ -34,6 +34,7 @@ export const profileLabels = {
   /** PF-46: el cuerpo del aviso de membresía desactivada, propio del perfil. */
   inactiveMessage:
     "Podés ver tu perfil, pero no cambiarlo. Pedile a quien administra el workspace que vuelva a activar tu membresía.",
+  loadFailed: "No se pudo cargar el perfil.",
 } as const;
 
 export const timeFormatNames = {

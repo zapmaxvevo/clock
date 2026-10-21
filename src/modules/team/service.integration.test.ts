@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { releasedEmailOf } from "@/lib/email";
 import type * as AuthRecords from "@/server/auth-records";
+import type * as OAuthRecords from "@/server/oauth-records";
 import type * as WorkspaceService from "@/modules/workspace/service";
 import { db } from "@/server/db";
 import {
@@ -12,6 +13,9 @@ import {
   auditLog,
   invitation,
   membership,
+  oauthAccessToken,
+  oauthConsent,
+  oauthRefreshToken,
   projectMember,
   session,
   taskAssignee,
@@ -32,6 +36,7 @@ import {
   seedWorkspace,
   type SeededWorkspace,
 } from "@/test/factories";
+import { grantRowsOf, seedGrant, seedOAuthClient } from "@/test/oauth-grants";
 import {
   auditFor,
   invitationOf,
@@ -64,13 +69,29 @@ import {
 
 /**
  * Criterio 17: un fallo después de borrar las sesiones, cuando `failAfterSessions`
- * está puesto. El resto de los tests usa la función real.
+ * está puesto, o después de borrar las autorizaciones (D-MCP-6), con
+ * `failAfterGrants`. El resto de los tests usa las funciones reales.
  */
 const injected = vi.hoisted(() => ({
   failAfterSessions: false,
   failAfterRelease: false,
   failAfterRegister: false,
+  failAfterGrants: false,
 }));
+
+vi.mock("@/server/oauth-records", async (importOriginal) => {
+  const actual = await importOriginal<typeof OAuthRecords>();
+  return {
+    ...actual,
+    deleteGrantsOf: async (...args: Parameters<typeof actual.deleteGrantsOf>) => {
+      const clients = await actual.deleteGrantsOf(...args);
+      if (injected.failAfterGrants) {
+        throw new Error("Fallo inyectado después de borrar las autorizaciones.");
+      }
+      return clients;
+    },
+  };
+});
 
 vi.mock("@/server/auth-records", async (importOriginal) => {
   const actual = await importOriginal<typeof AuthRecords>();
@@ -143,6 +164,7 @@ afterEach(() => {
   injected.failAfterSessions = false;
   injected.failAfterRelease = false;
   injected.failAfterRegister = false;
+  injected.failAfterGrants = false;
 });
 
 describe("changeRole: ascender y bajar (criterio 3)", () => {
@@ -763,6 +785,12 @@ async function statusWrites() {
     sessions: await db.select().from(session).orderBy(session.id),
     accounts: await db.select().from(account).orderBy(account.id),
     audits: await db.select().from(auditLog).orderBy(auditLog.id),
+    consents: await db.select().from(oauthConsent).orderBy(oauthConsent.id),
+    refreshTokens: await db
+      .select()
+      .from(oauthRefreshToken)
+      .orderBy(oauthRefreshToken.id),
+    accessTokens: await db.select().from(oauthAccessToken).orderBy(oauthAccessToken.id),
   };
 }
 
@@ -1204,6 +1232,78 @@ describe("changeStatus: todo o nada (criterio 17, ADR 0025)", () => {
     );
 
     expect(await statusWrites()).toEqual(before);
+  });
+});
+
+describe("changeStatus: desactivar revoca los asistentes (criterio 13 del MCP, D-MCP-6)", () => {
+  it("borra los consentimientos y los tokens de sus dos clientes y deja mcp.revokeAll", async () => {
+    const seeded = await seedWorkspace();
+    const target = await seedPerson(seeded.workspaceId, "member");
+    const sessionId = await seedSession(target.userId);
+    const first = await seedOAuthClient();
+    const second = await seedOAuthClient();
+    await seedGrant(target.userId, first, { sessionId });
+    await seedGrant(target.userId, second);
+    await seedGrant(seeded.ownerId, first);
+
+    await deactivate(ownerOf(seeded), target.membershipId);
+
+    expect(await grantRowsOf(target.userId)).toEqual({
+      consents: 0,
+      refresh: 0,
+      access: 0,
+    });
+    expect(await grantRowsOf(seeded.ownerId)).toEqual({
+      consents: 1,
+      refresh: 1,
+      access: 1,
+    });
+    const audits = await auditFor("user", target.userId);
+    expect(audits.map((row) => [row.action, row.actorId, row.previousValue])).toEqual([
+      ["session.revokeAll", seeded.ownerId, JSON.stringify({ sessions: 1 })],
+      ["mcp.revokeAll", seeded.ownerId, JSON.stringify({ clients: 2 })],
+    ]);
+  });
+
+  it("sin asistentes no deja mcp.revokeAll", async () => {
+    const seeded = await seedWorkspace();
+    const target = await seedPerson(seeded.workspaceId, "member");
+
+    await deactivate(ownerOf(seeded), target.membershipId);
+
+    expect((await auditFor("user", target.userId)).map((row) => row.action)).toEqual([]);
+  });
+
+  it("reactivar no devuelve las autorizaciones", async () => {
+    const seeded = await seedWorkspace();
+    const target = await seedPerson(seeded.workspaceId, "member");
+    await seedAccount(target.userId);
+    await seedGrant(target.userId, await seedOAuthClient());
+
+    await deactivate(ownerOf(seeded), target.membershipId);
+    await reactivate(ownerOf(seeded), target.membershipId);
+
+    expect(await grantRowsOf(target.userId)).toEqual({
+      consents: 0,
+      refresh: 0,
+      access: 0,
+    });
+  });
+
+  it("un fallo después de borrar las autorizaciones deja todo como estaba, también el set null de los tokens", async () => {
+    const seeded = await seedWorkspace();
+    const target = await seedPerson(seeded.workspaceId, "member");
+    const sessionId = await seedSession(target.userId);
+    await seedGrant(target.userId, await seedOAuthClient(), { sessionId });
+    const before = await statusWrites();
+    injected.failAfterGrants = true;
+
+    await expect(deactivate(ownerOf(seeded), target.membershipId)).rejects.toThrow(
+      "Fallo inyectado después de borrar las autorizaciones.",
+    );
+
+    expect(await statusWrites()).toEqual(before);
+    expect(before.accessTokens.map((row) => row.sessionId)).toEqual([sessionId]);
   });
 });
 
@@ -1696,11 +1796,11 @@ describe("quién vincula y libera (criterio 10 de E2b, D-E2b-4)", () => {
       const before = await accountWrites();
 
       for (const work of [
-        requestLink(viewer.actor, active.membershipId),
-        cancelLink(viewer.actor, active.membershipId),
-        release(viewer.actor, inactive.membershipId),
+        () => requestLink(viewer.actor, active.membershipId),
+        () => cancelLink(viewer.actor, active.membershipId),
+        () => release(viewer.actor, inactive.membershipId),
       ]) {
-        const error = await failureOf(work);
+        const error = await failureOf(work());
         expect([error.code, error.message]).toEqual([
           "forbidden",
           teamMessages.forbiddenAction,
@@ -1723,10 +1823,10 @@ describe("quién vincula y libera (criterio 10 de E2b, D-E2b-4)", () => {
     const before = await accountWrites();
 
     for (const work of [
-      requestLink(admin.actor, active.membershipId),
-      release(admin.actor, inactive.membershipId),
+      () => requestLink(admin.actor, active.membershipId),
+      () => release(admin.actor, inactive.membershipId),
     ]) {
-      const error = await failureOf(work);
+      const error = await failureOf(work());
       expect([error.code, error.message]).toEqual([
         "forbidden",
         teamMessages.forbiddenAction,
@@ -1953,10 +2053,10 @@ describe("el correo liberado (criterio 17 de E2b, D-E2b-9)", () => {
     ]);
     const before = await accountWrites();
     for (const work of [
-      reactivate(ownerOf(seeded), target.membershipId),
-      requestLink(ownerOf(seeded), target.membershipId),
+      () => reactivate(ownerOf(seeded), target.membershipId),
+      () => requestLink(ownerOf(seeded), target.membershipId),
     ]) {
-      const error = await failureOf(work);
+      const error = await failureOf(work());
       expect([error.code, error.message]).toEqual([
         "email_released",
         teamMessages.emailReleased,
@@ -2038,11 +2138,12 @@ describe("la vista de la vinculación (criterio 18 de E2b)", () => {
 });
 
 describe("todo o nada (criterio 22 de E2b, ADR 0025)", () => {
-  it("un fallo después de liberar el correo deja el correo, las cuentas y las sesiones como estaban", async () => {
+  it("un fallo después de liberar el correo deja el correo, las cuentas, las sesiones y las autorizaciones como estaban", async () => {
     const seeded = await seedWorkspace();
     const target = await seedPerson(seeded.workspaceId, "member", "inactive");
     await seedAccount(target.userId);
     await seedSession(target.userId);
+    await seedGrant(target.userId, await seedOAuthClient());
     const before = await accountWrites();
     injected.failAfterRelease = true;
 
@@ -2051,6 +2152,11 @@ describe("todo o nada (criterio 22 de E2b, ADR 0025)", () => {
     );
 
     expect(await accountWrites()).toEqual(before);
+    expect(await grantRowsOf(target.userId)).toEqual({
+      consents: 1,
+      refresh: 1,
+      access: 1,
+    });
   });
 
   it("un fallo después de registrar al externo deja la invitación y la marca como estaban", async () => {

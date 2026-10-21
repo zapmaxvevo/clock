@@ -3,15 +3,19 @@ import { redirect } from "next/navigation";
 
 import { GoogleSignInButton } from "@/components/layout/google-sign-in-button";
 import { Alert, AlertTitle } from "@/components/ui/alert";
+import { isOAuthLoginQuery } from "@/lib/oauth";
 import { loginErrorMessage } from "@/server/access";
 import { currentSession } from "@/server/session";
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
+  const params = await searchParams;
   const session = await currentSession();
-  if (session !== null) {
+  // D-MCP-15: una autorización que pide volver a entrar llega con sesión; el
+  // botón la retoma con `oauth_query`.
+  if (session !== null && !isOAuthLoginQuery(params)) {
     redirect("/");
   }
-  const { error } = await searchParams;
+  const { error } = params;
   // D-E1a-14: el texto sale del motivo; el del parámetro nunca se muestra.
   const errorMessage = loginErrorMessage(Array.isArray(error) ? error[0] : error);
 

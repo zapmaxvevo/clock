@@ -4,6 +4,17 @@ import { parseDomainList } from "@/lib/email";
 
 const csv = z.string().transform(parseDomainList);
 
+/** Una lista de direcciones separadas por coma, sin vacíos. */
+const urlList = z
+  .string()
+  .transform((value) =>
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+  )
+  .pipe(z.array(z.url()));
+
 const serverSchema = z.object({
   DATABASE_URL: z.url(),
   BETTER_AUTH_SECRET: z.string().min(32),
@@ -18,6 +29,26 @@ const serverSchema = z.object({
   EMAIL_FROM: z.email().optional(),
   CRON_SECRET: z.string().min(16),
   BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
+  /** D-MCP-14: el servidor MCP y la autorización de asistentes. Apagado por omisión. */
+  MCP_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  /**
+   * D-MCP-2: las redirecciones HTTPS que se aceptan al registrar y al autorizar,
+   * exactas. Las de los conectores remotos de Anthropic y de OpenAI, según su
+   * documentación (V-7). Loopback no va acá: lo acepta `isAllowedRedirect`.
+   */
+  MCP_REDIRECT_URIS: urlList.default([
+    "https://claude.ai/api/mcp/auth_callback",
+    "https://chatgpt.com/connector_platform_oauth_redirect",
+  ]),
+  /** D-MCP-7: los `Origin` que acepta `/api/mcp` además del propio (V-7). */
+  MCP_ALLOWED_ORIGINS: urlList.default([
+    "https://claude.ai",
+    "https://claude.com",
+    "https://chatgpt.com",
+  ]),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 

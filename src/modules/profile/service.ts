@@ -1,5 +1,5 @@
 import { initialsOf } from "@/lib/text";
-import { recordAudit } from "@/server/audit";
+import { auditActorOf, recordAudit } from "@/server/audit";
 import { db } from "@/server/db";
 import { can, type Actor } from "@/server/permissions";
 import {
@@ -276,8 +276,7 @@ async function writePreferenceColumn(
       columnOf(change),
     );
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: auditAction,
       entity: AUDIT_ENTITY,
       entityId: actor.userId,

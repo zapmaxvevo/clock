@@ -782,3 +782,62 @@ describe("assertCan", () => {
     expect(() => assertCan(actor("owner"), "team.manage", workspace)).not.toThrow();
   });
 });
+
+describe("can sobre los asistentes (ADR 0026, D-MCP-3 a D-MCP-5)", () => {
+  const roles = ["owner", "admin", "project_manager", "team_manager", "member"] as const;
+  const own = { kind: "profile", workspaceId, userId: "u1" } as const;
+  const other = { kind: "profile", workspaceId, userId: "u9" } as const;
+  const otherWorkspace = "22222222-2222-2222-2222-222222222222";
+
+  it("deja a los cinco roles conectar un asistente y desconectar uno propio", () => {
+    for (const role of roles) {
+      expect([role, can(actor(role), "mcp.connect", workspace)]).toEqual([role, true]);
+      expect([role, can(actor(role), "mcp.grant.revoke", own)]).toEqual([role, true]);
+    }
+  });
+
+  it("niega las dos a una membresía inactive o invited", () => {
+    for (const status of ["inactive", "invited"] as const) {
+      expect(can(actor("owner", { status }), "mcp.connect", workspace)).toBe(false);
+      expect(can(actor("owner", { status }), "mcp.grant.revoke", own)).toBe(false);
+    }
+  });
+
+  it("niega las dos sobre otro workspace", () => {
+    expect(
+      can(actor("owner"), "mcp.connect", {
+        kind: "workspace",
+        workspaceId: otherWorkspace,
+      }),
+    ).toBe(false);
+    expect(
+      can(actor("owner"), "mcp.grant.revoke", { ...own, workspaceId: otherWorkspace }),
+    ).toBe(false);
+  });
+
+  it("no deja a ningún rol desconectar los asistentes de otra persona", () => {
+    for (const role of roles) {
+      expect([role, can(actor(role), "mcp.grant.revoke", other)]).toEqual([role, false]);
+    }
+  });
+
+  it("no mira el cliente OAuth del actor", () => {
+    const viaMcp = actor("member", { oauthClientId: "cliente" });
+
+    expect(can(viaMcp, "mcp.connect", workspace)).toBe(true);
+    expect(
+      can(viaMcp, "timeEntry.own.create", {
+        kind: "timeEntry",
+        workspaceId,
+        userId: "u1",
+      }),
+    ).toBe(true);
+  });
+
+  it("niega un recurso de otra clase", () => {
+    // @ts-expect-error: mcp.connect pide un recurso workspace.
+    expect(can(actor("owner"), "mcp.connect", own)).toBe(false);
+    // @ts-expect-error: mcp.grant.revoke pide un recurso profile.
+    expect(can(actor("owner"), "mcp.grant.revoke", workspace)).toBe(false);
+  });
+});

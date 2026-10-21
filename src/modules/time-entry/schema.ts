@@ -4,7 +4,7 @@ import { sameId, type ProjectPair } from "@/lib/project-pair";
 import { normalizedIds } from "@/lib/tag-ids";
 import { noNullCharacter } from "@/lib/text";
 import type { ActionErrorCode } from "@/server/errors";
-import { isClock, MINUTES_PER_DAY, parseDayKey } from "@/server/time";
+import { daysBetweenKeys, isClock, MINUTES_PER_DAY, parseDayKey } from "@/server/time";
 import { PALETTE_KEYS } from "@/modules/project/palette";
 
 /**
@@ -22,6 +22,12 @@ export const BULK_MAX = 200;
 /** D-4: tope de etiquetas de una entrada. */
 export const TAGS_MAX = 50;
 
+/** D-MCP-13: el período más largo que lee `listEntriesOfPeriod`. */
+export const ENTRIES_PERIOD_MAX_DAYS = 31;
+
+/** D-MCP-13: el tope de entradas de una lectura de período. */
+export const ENTRIES_OF_PERIOD_MAX = 500;
+
 /** Textos que la interfaz muestra tal cual. Un código puede tener más de uno. */
 export const timeEntryMessages = {
   descriptionTooLong: "La descripción no puede superar los 3000 caracteres.",
@@ -30,6 +36,7 @@ export const timeEntryMessages = {
   forbidden: "No tenés permiso para hacer esto.",
   forbiddenOtherOwner: "No tenés permiso para editar esta entrada.",
   alreadyStopped: "Este timer ya había sido detenido.",
+  noRunningTimer: "No hay ningún timer corriendo.",
   endBeforeStart: "La hora de fin tiene que ser posterior a la de inicio.",
   timerRunning: "Detené el timer para agregar tiempo a mano.",
   tooShort: "La entrada tiene que durar al menos un minuto.",
@@ -54,6 +61,8 @@ export const timeEntryMessages = {
   cellNeedsEntryEdit: "Editá las entradas de esta celda desde el detalle.",
   /** TS-52: la fila supera el tope de `ids`; la persona no eligió nada. */
   rowTooManyEntries: `Esta fila tiene más de ${BULK_MAX} entradas en la semana; borralas por partes desde el rastreador.`,
+  periodInverted: "La fecha de fin no puede ser anterior a la de inicio.",
+  periodTooLong: `El período puede tener hasta ${ENTRIES_PERIOD_MAX_DAYS} días.`,
   unexpected: "No se pudo guardar. Revisá la conexión y volvé a intentar.",
 } as const;
 
@@ -109,6 +118,9 @@ export const startTimerInput = z
   .refine(hasProjectForTask, taskNeedsProject);
 
 export const stopTimerInput = z.object({ id: z.uuid() });
+
+/** D-MCP-8: el `stop_timer` del MCP; sin `id`, el timer que corre. */
+export const stopRunningTimerInput = z.object({ id: z.uuid().optional() });
 
 export const updateDescriptionInput = z.object({
   id: z.uuid(),
@@ -378,10 +390,39 @@ export const removeTimesheetRowInput = z
 /** El parámetro de `/planilla` (TS-10), con `safeParse`, como el del calendario. */
 export const timesheetWeekParams = z.object({ semana: dayKeyInput });
 
+/**
+ * Los días de un período, contando los dos extremos; `null` si alguno no es un
+ * día, que ya lo rechaza `dayKeyInput`.
+ */
+function periodDays(period: {
+  readonly from: string;
+  readonly to: string;
+}): number | null {
+  if (parseDayKey(period.from) === null || parseDayKey(period.to) === null) {
+    return null;
+  }
+  return daysBetweenKeys(period.from, period.to) + 1;
+}
+
+/** D-MCP-8, D-MCP-13: los días de una lectura de entradas, en la zona de la persona. */
+export const entriesPeriodInput = z
+  .object({ from: dayKeyInput, to: dayKeyInput })
+  .refine((period) => (periodDays(period) ?? 1) >= 1, {
+    message: timeEntryMessages.periodInverted,
+    path: ["to"],
+  })
+  .refine((period) => (periodDays(period) ?? 1) <= ENTRIES_PERIOD_MAX_DAYS, {
+    message: timeEntryMessages.periodTooLong,
+    path: ["to"],
+  });
+
+export type EntriesPeriodInput = z.input<typeof entriesPeriodInput>;
+export type EntriesPeriodValues = z.output<typeof entriesPeriodInput>;
 export type StartTimerInput = z.input<typeof startTimerInput>;
 /** Lo que recibe el service: `description` ya validada y con su default. */
 export type StartTimerValues = z.output<typeof startTimerInput>;
 export type StopTimerInput = z.infer<typeof stopTimerInput>;
+export type StopRunningTimerInput = z.infer<typeof stopRunningTimerInput>;
 export type UpdateDescriptionInput = z.infer<typeof updateDescriptionInput>;
 export type DeleteEntryInput = z.infer<typeof deleteEntryInput>;
 export type CreateManualEntryInput = z.input<typeof createManualEntryInput>;
@@ -700,6 +741,19 @@ export type BulkEditEntriesResult = { readonly entries: readonly TimeEntryView[]
 
 /** Los ids pedidos: los que se borraron y los que ya no estaban (ADR 0011). */
 export type BulkDeleteEntriesResult = { readonly ids: readonly string[] };
+
+/** D-MCP-8: las entradas propias de un período y el timer, leídos juntos. */
+export type EntriesOfPeriod = {
+  readonly from: string;
+  readonly to: string;
+  /** Las cerradas que empiezan en el período, por inicio ascendente. */
+  readonly entries: readonly TimeEntryView[];
+  readonly running: TimeEntryView | null;
+  /** Exacto, de las devueltas. */
+  readonly closedSeconds: number;
+  /** Hay más de `ENTRIES_OF_PERIOD_MAX` y se devolvieron las primeras. */
+  readonly truncated: boolean;
+};
 
 /** La entrada como quedó, se haya escrito o no (ADR 0013). */
 export type UpdateEntryResult = { readonly entry: TimeEntryView };

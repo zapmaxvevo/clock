@@ -138,6 +138,11 @@ export function durationSeconds(start: Date, end: Date): number {
   return Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
 }
 
+/** Los minutos enteros de `seconds` segundos, truncados. Un negativo da 0. */
+export function wholeMinutes(seconds: number): number {
+  return Math.floor(Math.max(0, seconds) / 60);
+}
+
 /**
  * El instante `minutes` minutos después. Suma sobre el instante, no sobre la
  * hora de pared: con un cambio de horario en el medio no coinciden (ADR 0018).

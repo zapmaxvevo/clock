@@ -9,6 +9,11 @@ export type Actor = {
   readonly workspaceId: string;
   readonly role: Role;
   readonly status: MembershipStatus;
+  /**
+   * D-MCP-12: el cliente OAuth por el que llegó el pedido, si vino por MCP.
+   * `can()` no lo mira; lo usa `auditActorOf`.
+   */
+  readonly oauthClientId?: string;
 };
 
 export type WorkspaceResource = {
@@ -100,6 +105,12 @@ type ResourceByAction = {
   // PR-62: quién ve las etiquetas del workspace. Usar una etiqueta es verla.
   "tag.view": WorkspaceResource;
   "profile.own.update": ProfileResource;
+  // ADR 0026, D-MCP-3, D-MCP-4: autorizar un asistente y usarlo. Una membresía
+  // no activa no lo tiene, por la regla común de `can()`.
+  "mcp.connect": WorkspaceResource;
+  // D-MCP-5: desconectar un asistente propio. `ProfileResource`: la autorización
+  // es de la cuenta, y `can()` ya exige que sea la propia.
+  "mcp.grant.revoke": ProfileResource;
 };
 
 export type Action = keyof ResourceByAction;
@@ -135,6 +146,8 @@ const resourceKinds = {
   "tag.create": ["workspace"],
   "tag.view": ["workspace"],
   "profile.own.update": ["profile"],
+  "mcp.connect": ["workspace"],
+  "mcp.grant.revoke": ["profile"],
 } satisfies { [A in Action]: readonly ResourceFor<A>["kind"][] };
 
 const everyone: readonly Role[] = [
@@ -170,6 +183,8 @@ const allowedRoles: Record<Action, readonly Role[]> = {
   "tag.create": everyone,
   "tag.view": everyone,
   "profile.own.update": everyone,
+  "mcp.connect": everyone,
+  "mcp.grant.revoke": everyone,
 };
 
 /**

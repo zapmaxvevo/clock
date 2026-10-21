@@ -10,10 +10,12 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 
 import { releasedEmailOf } from "@/lib/email";
-import { recordAudit } from "@/server/audit";
-import type { Transaction } from "@/server/db";
+import { auditActorOf, recordAudit } from "@/server/audit";
+import { db, type Transaction } from "@/server/db";
 import { account, session, user } from "@/server/db/schema";
+import { deleteGrantsOf } from "@/server/oauth-records";
 import type { Actor } from "@/server/permissions";
+import type { SessionUser } from "@/server/user-context";
 
 /** El `providerId` de Better Auth para Google. */
 const GOOGLE_PROVIDER_ID = "google";
@@ -39,8 +41,7 @@ export async function deleteSessionsOf(
   }
   // Solo la cantidad: la constancia nunca guarda tokens ni ids de sesión.
   await recordAudit(tx, {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: "session.revokeAll",
     entity: "user",
     entityId: userId,
@@ -91,12 +92,14 @@ async function deleteAccountsOf(tx: Transaction, userId: string): Promise<number
 
 /**
  * D-E2b-3, ADR 0025: deja la cuenta de Google `sub` como la única de
- * `person.userId`. Borra sus otras filas de `account` y sus sesiones
- * (`deleteSessionsOf`, con `person` como autor), inserta la de `sub` sin tokens
- * —los escribe Better Auth en el mismo ingreso— y deja `account.link` (`entity:
- * "user"`, `entityId: userId`, `previousValue: { accounts: n }`) con `person`
- * como autor. No consulta permisos: la usa `bindRequestedAccount`, con la
- * membresía ya bloqueada.
+ * `person.userId`. Borra sus otras filas de `account`, sus sesiones
+ * (`deleteSessionsOf`) y después sus autorizaciones (`deleteGrantsOf`, D-MCP-5:
+ * un asistente que conectó la cuenta vieja no sigue con la nueva), las dos con
+ * `person` como autor; inserta la de `sub` sin tokens —los escribe Better Auth
+ * en el mismo ingreso— y deja `account.link` (`entity: "user"`, `entityId:
+ * userId`, `previousValue: { accounts: n }`) con `person` como autor. No
+ * consulta permisos: la usa `bindRequestedAccount`, con la membresía ya
+ * bloqueada.
  */
 export async function bindGoogleAccount(
   tx: Transaction,
@@ -105,6 +108,7 @@ export async function bindGoogleAccount(
 ): Promise<void> {
   const previous = await deleteAccountsOf(tx, person.userId);
   await deleteSessionsOf(tx, person, person.userId);
+  await deleteGrantsOf(tx, person, person.userId);
   // `updated_at` no tiene valor por omisión en la tabla de Better Auth.
   const now = new Date();
   await tx.insert(account).values({
@@ -117,8 +121,7 @@ export async function bindGoogleAccount(
   });
   // Solo la cantidad: la constancia nunca guarda tokens ni ids de cuenta.
   await recordAudit(tx, {
-    workspaceId: person.workspaceId,
-    actorId: person.userId,
+    ...auditActorOf(person),
     action: "account.link",
     entity: "user",
     entityId: person.userId,
@@ -144,10 +147,11 @@ export async function userEmailOf(tx: Transaction, userId: string): Promise<stri
 /**
  * D-E2b-9, ADR 0025: cambia el correo de `userId`, `previousEmail` tal como lo
  * leyó quien llama con `userEmailOf`, por `releasedEmailOf(userId)`, borra sus
- * filas de `account` y sus sesiones (`deleteSessionsOf`), y deja
- * `user.releaseEmail` (`entity: "user"`, `previousValue: { email, accounts: n }`,
- * `nextValue: { email: <liberado> }`) con `actor` como autor. No consulta
- * permisos: la usa `releaseEmail` de `team`, que ya los decidió.
+ * filas de `account`, sus sesiones (`deleteSessionsOf`) y después sus
+ * autorizaciones (`deleteGrantsOf`, D-MCP-5), y deja `user.releaseEmail`
+ * (`entity: "user"`, `previousValue: { email, accounts: n }`, `nextValue:
+ * { email: <liberado> }`) con `actor` como autor. No consulta permisos: la usa
+ * `releaseEmail` de `team`, que ya los decidió.
  */
 export async function releaseEmailOf(
   tx: Transaction,
@@ -159,13 +163,26 @@ export async function releaseEmailOf(
   await tx.update(user).set({ email: released }).where(eq(user.id, userId));
   const accounts = await deleteAccountsOf(tx, userId);
   await deleteSessionsOf(tx, actor, userId);
+  await deleteGrantsOf(tx, actor, userId);
   await recordAudit(tx, {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: "user.releaseEmail",
     entity: "user",
     entityId: userId,
     previousValue: { email: previousEmail, accounts },
     nextValue: { email: released },
   });
+}
+
+/**
+ * D-MCP-3, paso 5: la persona de un token, como la guarda `user`, o `undefined`
+ * si la fila ya no existe. Solo lee, sin transacción.
+ */
+export async function findSessionUser(userId: string): Promise<SessionUser | undefined> {
+  const rows = await db
+    .select({ id: user.id, email: user.email, name: user.name, image: user.image })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1);
+  return rows.at(0);
 }

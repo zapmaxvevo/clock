@@ -2,40 +2,14 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
-import { displayNameOf, profileOf, type ProfileContext } from "@/modules/profile/service";
-import { ensureWorkspaceContext } from "@/modules/workspace/service";
-import type { AccessDenialReason } from "@/server/access";
 import { auth } from "@/server/auth";
-import { decideSessionIdentity } from "@/server/entry";
+import {
+  readUserContext,
+  type SessionContext,
+  type SessionRead,
+} from "@/server/user-context";
 
-export type CurrentUser = {
-  readonly id: string;
-  /** El nombre que se muestra: el editado o el de Google (`displayNameOf`). */
-  readonly name: string;
-  readonly email: string;
-  readonly image: string | null;
-};
-
-export type SessionContext = ProfileContext & { readonly user: CurrentUser };
-
-/**
- * La foto sale de Google (PF-09): una que no viene de su servidor de imágenes
- * no se muestra, y quedan las iniciales (PF-44).
- */
-const GOOGLE_PHOTO_PREFIX = "https://lh3.googleusercontent.com/";
-
-function googlePhotoOf(image: string | null | undefined): string | null {
-  return image?.startsWith(GOOGLE_PHOTO_PREFIX) === true ? image : null;
-}
-
-/** D-E1b-5: el motivo con que `requireSession` manda a `/login` una sesión sin acceso. */
-const NO_ACCESS: AccessDenialReason = "sin_invitacion";
-
-/** D-E1b-5: la lectura de un pedido, con sus tres resultados. */
-type SessionRead =
-  | { readonly kind: "anonymous" }
-  | { readonly kind: "denied"; readonly reason: AccessDenialReason }
-  | { readonly kind: "ready"; readonly context: SessionContext };
+export type { CurrentUser, SessionContext } from "@/server/user-context";
 
 /**
  * Punto central de autenticación del servidor. Toda lectura y toda mutación
@@ -52,32 +26,7 @@ const readSession = cache(async (): Promise<SessionRead> => {
   if (session === null) {
     return { kind: "anonymous" };
   }
-  const identity = await decideSessionIdentity(session.user.email);
-  if (!identity.allowed) {
-    return { kind: "denied", reason: identity.reason };
-  }
-  // Dos lecturas independientes, fuera de toda transacción común.
-  const [context, stored] = await Promise.all([
-    ensureWorkspaceContext({ id: session.user.id, email: session.user.email }),
-    profileOf(session.user.id),
-  ]);
-  if (context === null) {
-    return { kind: "denied", reason: NO_ACCESS };
-  }
-  return {
-    kind: "ready",
-    context: {
-      ...context,
-      preferences: stored.preferences,
-      user: {
-        id: session.user.id,
-        // Único lugar que compone el nombre de quien mira (PF-08, PF-45).
-        name: displayNameOf(stored, session.user.name),
-        email: session.user.email,
-        image: googlePhotoOf(session.user.image),
-      },
-    },
-  };
+  return readUserContext(session.user);
 });
 
 /** El contexto de quien pide, o `null` sin sesión o sin acceso (D-E1b-5). */
