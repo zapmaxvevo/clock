@@ -27,7 +27,10 @@ export type WorkspaceRead = {
 /** La fila de ajustes del workspace, como la guarda la base. */
 export type SettingsRead = { readonly durationFormat: string };
 
-/** Una columna de la fila de ajustes con su valor nuevo, ya validado. E4 suma `weekStart`. */
+/**
+ * Una columna de la fila de ajustes con su valor, ya validado. E4 la vuelve
+ * una unión con `{ weekStart }`, como `PreferenceColumn` del perfil.
+ */
 export type SettingsColumn = { readonly durationFormat: DurationFormat };
 
 /** Una persona del workspace con los dos nombres, que solo se muestran (ADR 0010). */

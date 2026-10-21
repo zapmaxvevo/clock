@@ -54,8 +54,6 @@ import {
   type WorkspaceSettingsView,
 } from "./schema";
 
-export type { WorkspaceSettings } from "./schema";
-
 export type WorkspaceContext = {
   readonly workspace: WorkspaceRow;
   readonly settings: WorkspaceSettings;
@@ -637,11 +635,28 @@ export async function updateWorkspaceName(
   });
 }
 
-/** La columna que escribe el pedido, con su valor. E4 suma `weekStart`. */
-function settingsColumnOf(input: UpdateWorkspaceSettingInput): SettingsColumn {
+/** Lo que pide un cambio de ajuste: la columna de su clave antes y después. */
+type SettingChange = {
+  readonly previous: SettingsColumn;
+  readonly next: SettingsColumn;
+  readonly unchanged: boolean;
+};
+
+/**
+ * La clave del pedido sobre los ajustes guardados. El `switch` es exhaustivo:
+ * E4 suma el caso de `weekStart`, con su comparación y su constancia.
+ */
+function settingChangeOf(
+  input: UpdateWorkspaceSettingInput,
+  current: WorkspaceSettings,
+): SettingChange {
   switch (input.key) {
     case "durationFormat":
-      return { durationFormat: input.value };
+      return {
+        previous: { durationFormat: current.durationFormat },
+        next: { durationFormat: input.value },
+        unchanged: current.durationFormat === input.value,
+      };
   }
 }
 
@@ -649,7 +664,7 @@ function settingsColumnOf(input: UpdateWorkspaceSettingInput): SettingsColumn {
  * WS-04, WS-14, WS-56, WS-65, WS-73: D-WS2b-1 y D-WS2b-3. El mismo valor no
  * escribe. Sin la fila de ajustes, lanza sin crearla: un ajuste que aparece
  * con valores de omisión ocultaría el problema. Deja `workspace.updateSetting`
- * con el anterior y el nuevo.
+ * con el anterior y el nuevo de la clave del pedido.
  */
 export async function updateWorkspaceSetting(
   actor: Actor,
@@ -666,24 +681,23 @@ export async function updateWorkspaceSetting(
     if (row === undefined) {
       throw new Error(MISSING_SETTINGS);
     }
-    const previous = resolveDurationFormat(row.durationFormat);
+    const current: WorkspaceSettings = {
+      durationFormat: resolveDurationFormat(row.durationFormat),
+    };
+    const { previous, next, unchanged } = settingChangeOf(input, current);
     // WS-04: también lo que hace inofensivo reintentar (WS-62).
-    if (previous === input.value) {
-      return { settings: { durationFormat: previous } };
+    if (unchanged) {
+      return { settings: current };
     }
-    await workspaceRepository.updateWorkspaceSettings(
-      tx,
-      actor.workspaceId,
-      settingsColumnOf(input),
-    );
+    await workspaceRepository.updateWorkspaceSettings(tx, actor.workspaceId, next);
     await recordAudit(tx, {
       ...auditActorOf(actor),
       action: "workspace.updateSetting",
       entity: "workspace_settings",
       entityId: actor.workspaceId,
-      previousValue: { durationFormat: previous },
-      nextValue: { durationFormat: input.value },
+      previousValue: previous,
+      nextValue: next,
     });
-    return { settings: { durationFormat: input.value } };
+    return { settings: { ...current, ...next } };
   });
 }
