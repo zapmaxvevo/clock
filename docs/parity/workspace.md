@@ -337,15 +337,16 @@ del equipo— no cambia.
 
 **WS-15 Dos valores, compacto por defecto** — `adaptar`
 Los dos de PF-20: «Completo (hh:mm:ss)» y «Compacto (h:mm)», en ese orden, en un
-selector rotulado «Formato de duración», cada opción con su ejemplo de la
-duración de una hora y media: `01:30:00` y `1:30`. El decimal queda fuera: es
-de plan pago (PF-20, perfil P-01). El valor inicial es compacto (perfil P-01,
-P-03). Desde WS2a el valor vive en `workspace_settings.duration_format`,
-compacto por omisión (migración `0019`), y `formatDuration` lo recibe
+selector rotulado «Formato de duración». El patrón es el ejemplo de cada
+opción: el disparador muestra «Completo (hh:mm:ss)», y la lista, «Completo» con
+«(hh:mm:ss)» en gris, como los formatos de fecha y de hora del perfil. No llevan
+además el ejemplo de una hora y media. El decimal queda fuera: es de plan pago
+(PF-20, perfil P-01). El valor inicial es compacto (perfil P-01, P-03). Desde
+WS2a el valor vive en `workspace_settings.duration_format`, compacto por
+omisión (migración `0020`), y `formatDuration` lo recibe
 ([ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md)).
-Hasta WS2b no hay selector, y el perfil lo muestra en solo lectura como
-«Compacto (h:mm)» con «Lo define el workspace.» (PF-31), un texto fijo que pasa
-a mostrar el valor del workspace con WS2b.
+Desde WS2b lo cambian owner y admin con ese selector, y el perfil lo muestra en
+solo lectura con el mismo texto y «Lo define el workspace.» (PF-31).
 Justificación del `adaptar`: se implementan dos de los tres formatos.
 Dato del workspace del equipo: la planilla muestra `06:00:00` (timesheet,
 respuesta 13), que es el completo. El predeterminado no se reabre. Decidido el
@@ -353,6 +354,13 @@ respuesta 13), que es el completo. El predeterminado no se reabre. Decidido el
 completo (`06:00:00`), el que el equipo veía en Clockify.
 _Corregido el 2026-10-20, WS2a_: decía que no había columna y que
 `formatDuration` fijaba `h:mm`.
+_Corregido el 2026-10-21, WS2b_: decía que cada opción llevaba además su
+ejemplo de la duración de una hora y media, `01:30:00` y `1:30`; con el patrón
+en el nombre sería un segundo paréntesis. Lo decidió el usuario el 2026-10-21
+(pregunta 2 del [contrato de WS2b](../slices/fase2-ws2b-selector.md),
+D-WS2b-6). Decía también que la columna era de la migración `0019`, que con el
+rebase de WS2a sobre el MCP es la `0020` (D-WS2a-11), y que hasta WS2b no había
+selector y el perfil mostraba un texto fijo.
 
 **WS-16 El formato decide también cómo se calcula** — `replicar`, con la regla
 como decisión del equipo (ADR 0029)
