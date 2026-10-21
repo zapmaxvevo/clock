@@ -24,6 +24,12 @@ import { addDays, minuteOfDayIn, todayIn, weekStartOf, type CivilDay } from "./d
 import { holdActionResponses, recordActions, withServerAction } from "./network";
 import { expect, test } from "./session";
 import {
+  DURATION_FORMAT_TEXTS,
+  durationFormatControl,
+  enterAsAdmin,
+  SETTINGS_PATH,
+} from "./settings-page";
+import {
   cellDetailDialog,
   cellField,
   cellMenuButton,
@@ -68,7 +74,9 @@ import {
  * una persona propia y siembra entradas con segundos sueltos —100 segundos son
  * `0:01` en el compacto y `00:01:40` en el completo—, así un lugar que formatee
  * en minutos o con el compacto falla. El contador del timer no es una
- * duración: sigue en `h:mm:ss` sin relleno (PF-22, WS-66).
+ * duración: sigue en `h:mm:ss` sin relleno (PF-22, WS-66). Al final, el perfil
+ * y `/configuracion` dicen el formato del workspace (§9.4 del contrato de
+ * WS2b); el reporte y las descargas están en `reports-duration.full.spec.ts`.
  */
 
 /** El total de un grupo o del período en el completo, con su etiqueta. */
@@ -442,4 +450,23 @@ test("el bloque del timer en el calendario avanza en el completo y su diálogo s
   await expect(elapsedCounter(dialog)).toHaveText(COUNTER);
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
+});
+
+test("el perfil muestra el formato del workspace, el completo", async ({ page }) => {
+  await page.goto("/perfil");
+
+  // PF-31, criterio 12: el valor del workspace, que la persona no cambia.
+  const main = page.getByRole("main");
+  await expect(main.getByText("Formato de duración", { exact: true })).toBeVisible();
+  await expect(main.getByText(DURATION_FORMAT_TEXTS.full, { exact: true })).toBeVisible();
+  await expect(main.getByText(DURATION_FORMAT_TEXTS.compact)).toHaveCount(0);
+  await expect(main.getByText("Lo define el workspace.", { exact: true })).toBeVisible();
+});
+
+test("en /configuracion el selector dice el completo", async ({ page, email }) => {
+  await enterAsAdmin(page, email);
+
+  // WS-63, criterio 13: el valor guardado, leído de la fila de ajustes.
+  await page.goto(SETTINGS_PATH);
+  await expect(durationFormatControl(page)).toHaveText(DURATION_FORMAT_TEXTS.full);
 });

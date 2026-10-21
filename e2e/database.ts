@@ -134,11 +134,12 @@ export async function workspaceTimeZone(): Promise<string> {
 }
 
 /**
- * Pone el formato de duración del workspace de los e2e, como lo va a guardar
- * el selector de WS2b (D-WS2a-12 de WS2a). Es de todo el workspace y cambia lo
- * que leen todos los specs: solo lo llaman el setup, que lo deja en `compact`,
- * y el setup y el teardown del proyecto `duration-full`, que corre después de
- * la suite. Sin la fila de ajustes, se corta.
+ * Pone el formato de duración del workspace de los e2e, como lo guarda el
+ * selector de `/configuracion` (D-WS2a-12 de WS2a). Es de todo el workspace y
+ * cambia lo que leen todos los specs: solo lo llaman el setup, que lo deja en
+ * `compact`, el setup y el teardown del proyecto `duration-full`, que corre
+ * después de la suite, y el proyecto `duration-switch`, que corre solo después
+ * del completo (D-WS2b-12). Sin la fila de ajustes, se corta.
  */
 export async function setDurationFormat(format: DurationFormat): Promise<void> {
   await updateOne(
@@ -162,6 +163,84 @@ export async function durationFormatOf(): Promise<DurationFormat> {
       throw new Error("El workspace de los e2e no tiene fila de ajustes.");
     }
     return row.duration_format;
+  });
+}
+
+/**
+ * Crea la fila de ajustes del workspace de los e2e si falta, con los valores
+ * por omisión (D-WS2b-12). El recorrido de WS-73 la borra y la restituye en su
+ * `finally`; si la corrida se corta entre las dos, la base reusada queda sin
+ * fila y `setDurationFormat` se cortaría en el setup de la siguiente.
+ */
+export async function ensureWorkspaceSettings(): Promise<void> {
+  await withDatabase((client) =>
+    client.query(
+      `insert into workspace_settings (workspace_id)
+       select ${FIRST_WORKSPACE}
+       on conflict (workspace_id) do nothing`,
+    ),
+  );
+}
+
+/**
+ * Borra la fila de ajustes del workspace de los e2e: el estado de WS-73, que
+ * la aplicación no produce. Solo lo llama el proyecto `duration-switch`, que
+ * corre solo, y siempre con `restoreWorkspaceSettings` en un `finally`.
+ */
+export async function deleteWorkspaceSettings(): Promise<void> {
+  await updateOne(
+    `delete from workspace_settings where workspace_id = ${FIRST_WORKSPACE}`,
+    [],
+  );
+}
+
+/**
+ * Deja la fila de ajustes del workspace de los e2e con `format`, la haya
+ * borrado `deleteWorkspaceSettings` o no. Las demás columnas quedan en su
+ * valor por omisión, el único que usa la aplicación.
+ */
+export async function restoreWorkspaceSettings(format: DurationFormat): Promise<void> {
+  await updateOne(
+    `insert into workspace_settings (workspace_id, duration_format)
+     select ${FIRST_WORKSPACE}, $1
+     on conflict (workspace_id)
+       do update set duration_format = excluded.duration_format, updated_at = now()`,
+    [format],
+  );
+}
+
+/** Una constancia de `workspace.updateSetting`, con los valores como quedan en la base. */
+export type WorkspaceSettingAudit = {
+  readonly previousValue: string;
+  readonly nextValue: string;
+};
+
+/**
+ * Las constancias de `workspace.updateSetting` que dejó una persona sobre la
+ * fila de ajustes del workspace de los e2e, de la más vieja a la más nueva
+ * (§4.5 del contrato de WS2b). Cada recorrido entra con una persona propia,
+ * así que son solo las suyas.
+ */
+export async function workspaceSettingAuditsOf(
+  email: string,
+): Promise<readonly WorkspaceSettingAudit[]> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ previous_value: string; next_value: string }>(
+      `select audit_log.previous_value, audit_log.next_value
+         from audit_log
+         join "user" on "user".id = audit_log.actor_id
+        where audit_log.workspace_id = ${FIRST_WORKSPACE}
+          and audit_log.action = 'workspace.updateSetting'
+          and audit_log.entity = 'workspace_settings'
+          and audit_log.entity_id = ${FIRST_WORKSPACE}::text
+          and "user".email = $1
+        order by audit_log.created_at, audit_log.id`,
+      [email],
+    );
+    return result.rows.map((row) => ({
+      previousValue: row.previous_value,
+      nextValue: row.next_value,
+    }));
   });
 }
 
