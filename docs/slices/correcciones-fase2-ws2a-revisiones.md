@@ -311,35 +311,36 @@ e2e corrió con `--project duration-full --no-deps` contra `next start`, con el
 workspace en `full` por `psql` (§9.4). En la tabla va el test que mata cada
 mutación, o el primero si son varios.
 
-| Mutación                                                                      | La mata                                                                                                                                                         |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C1 en minutos (`use-group-total.ts:39`, la suma `/ 60`)                       | `use-group-total.test.tsx`, los 3 casos, y `calendar-toolbar.test.tsx`, «el total del período … va con el formato de duración del workspace»                    |
-| C1 en `"compact"` fijo                                                        | Los mismos 4                                                                                                                                                    |
-| C2 en minutos (`entry-row.tsx:223`, sin `* 60`)                               | Ningún test de unidad (§9.1: lo cubre la e2e del completo). La e2e: ver abajo                                                                                   |
-| C3, el valor inicial en `"compact"` fijo (`manual-bar.tsx:154`)               | `manual-bar.test.tsx`, «muestra el borrador de 90 minutos con el formato del workspace»                                                                         |
-| C3 al confirmar, en `"compact"` fijo (`manual-bar.tsx:157`)                   | Ningún test de unidad (§9.1). La e2e: ver abajo                                                                                                                 |
-| C4 en minutos (`calendar-gestures.ts:314`)                                    | `calendar-gestures.test.ts`, «la duración va con el formato del workspace, en minutos enteros» y «dibuja la entrada con el trío nuevo»                          |
-| C5 en `"compact"` fijo (`calendar-block.tsx:106`)                             | `calendar-block.test.tsx`, «el transcurrido del timer va con el formato de duración, no con el del contador (D-WS2a-7)»                                         |
-| C6 en minutos (`entry-dialog.tsx:569`)                                        | `entry-dialog.test.tsx`, «un trío que no es el de la entrada muestra su duración con el formato del workspace» y «el alta lleva el trío propuesto»              |
-| C6 al confirmar, en `"compact"` fijo (`entry-dialog.tsx:573`)                 | Ningún test de unidad. La e2e, desde `0bff31c`: `duration-format.full.spec.ts:389`, la afirmación después de `duration.fill("30")` y Tab                        |
-| C7, los totales en minutos (`timesheet-model.ts:120`)                         | 13 tests: los de los totales de `timesheet-model.test.ts` (TS-44 … TS-47, los dos formatos, D-WS2a-8) y 3 de `timesheet-view.test.tsx`                          |
-| C7, `zero` como `seconds < 60` (`:121`)                                       | `timesheet-model.test.ts`, «un total de 30 segundos es gris con el compacto y no con el completo (TS-45)»                                                       |
-| C8, la celda rotulada con sus minutos (`:278`)                                | `timesheet-model.test.ts`, «la celda muestra sus segundos con el formato» y «con el completo, una celda de dos entradas queda en `00:05:20`»                    |
-| C9, `cellCommit` con el rótulo de lo tecleado (`:401`)                        | `timesheet-cell.test.tsx`, «con varias entradas conserva los segundos sueltos, como el servidor (TS-34)»                                                        |
-| `writtenSeconds` que devuelve `minutes × 60` siempre (`:139`)                 | 4 tests: el de `timesheet-cell.test.tsx` de arriba, «writtenSeconds … con varias conserva el resto» y los dos de la escritura en vuelo de D-WS2a-8              |
-| C9 en la celda, `cellCommit(text, cell, "compact")` (`timesheet-cell.tsx:46`) | Ningún test de unidad. La e2e, desde `0bff31c`: `duration-format.full.spec.ts:297`, con `writeCell(page, one, "5", "Enter")`. Con Tab sobrevivía                |
-| La vista de la planilla con `format: "compact"` (`timesheet-view.tsx:124`)    | `timesheet-view.test.tsx`, «la celda y los totales siguen el formato de duración del proveedor»                                                                 |
-| S1, `toView` en `"compact"` fijo (`time-entry/service.ts:217`)                | 3 de «S1: durationLabel con el formato de duración del workspace» en `time-entry/service.integration.test.ts`, y el criterio 6 de `actions.integration.test.ts` |
-| `timeSettingsOf` en `"compact"` fijo (`profile/service.ts`)                   | «timeSettingsOf con el formato de duración (D-WS2a-3)», los dos de `profile/service.integration.test.ts`, y el criterio 6                                       |
-| El `left join` cambiado por `inner join` (`workspace/repository.ts:79`)       | `workspace/service.integration.test.ts`, «sin la fila de ajustes trae compact … (WS-73)» y «lee los ajustes del workspace más viejo, no los de otro»            |
-| `left join … on true`                                                         | «lee los ajustes del workspace más viejo, no los de otro», desde `d0516d8` (antes sobrevivía)                                                                   |
-| `contextOf` en `"compact"` fijo (`workspace/service.ts`)                      | «trae el valor escrito en la base», «cada persona del workspace recibe el mismo formato», «el check de la base acepta cada valor…» y el criterio 6              |
-| El valor por omisión en `"full"` (`resolveDurationFormat`)                    | «resolveDurationFormat … sin fila de ajustes da compact» y «sin la fila de ajustes trae compact … (WS-73)»                                                      |
+| Mutación                                                                      | La mata                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 en minutos (`use-group-total.ts:39`, la suma `/ 60`)                       | `use-group-total.test.tsx`, los 3 casos, y `calendar-toolbar.test.tsx`, «el total del período … va con el formato de duración del workspace»                                                |
+| C1 en `"compact"` fijo                                                        | Los mismos 4                                                                                                                                                                                |
+| C2 en minutos (`entry-row.tsx:223`, sin `* 60`)                               | Ningún test de unidad (§9.1). La e2e: `duration-format.full.spec.ts:219`, «editar el horario de una fila muestra la duración del borrador mientras viaja…» (§9.4, 3)                        |
+| C3, el valor inicial en `"compact"` fijo (`manual-bar.tsx:154`)               | `manual-bar.test.tsx`, «muestra el borrador de 90 minutos con el formato del workspace»                                                                                                     |
+| C3 al confirmar, en `"compact"` fijo (`manual-bar.tsx:157`)                   | Ningún test de unidad (§9.1). La e2e: `duration-format.full.spec.ts:178`, «la barra manual muestra la duración en el completo…», que confirma con Enter (`setClock`, `tracker-page.ts:251`) |
+| C4 en minutos (`calendar-gestures.ts:314`)                                    | `calendar-gestures.test.ts`, «la duración va con el formato del workspace, en minutos enteros» y «dibuja la entrada con el trío nuevo»                                                      |
+| C5 en `"compact"` fijo (`calendar-block.tsx:106`)                             | `calendar-block.test.tsx`, «el transcurrido del timer va con el formato de duración, no con el del contador (D-WS2a-7)»                                                                     |
+| C6 en minutos (`entry-dialog.tsx:569`)                                        | `entry-dialog.test.tsx`, «un trío que no es el de la entrada muestra su duración con el formato del workspace» y «el alta lleva el trío propuesto»                                          |
+| C6 al confirmar, en `"compact"` fijo (`entry-dialog.tsx:573`)                 | Ningún test de unidad. La e2e, desde `0bff31c`: `duration-format.full.spec.ts:389`, la afirmación después de `duration.fill("30")` y Tab                                                    |
+| C7, los totales en minutos (`timesheet-model.ts:120`)                         | 13 tests: los de los totales de `timesheet-model.test.ts` (TS-44 … TS-47, los dos formatos, D-WS2a-8) y 3 de `timesheet-view.test.tsx`                                                      |
+| C7, `zero` como `seconds < 60` (`:121`)                                       | `timesheet-model.test.ts`, «un total de 30 segundos es gris con el compacto y no con el completo (TS-45)»                                                                                   |
+| C8, la celda rotulada con sus minutos (`:278`)                                | `timesheet-model.test.ts`, «la celda muestra sus segundos con el formato» y «con el completo, una celda de dos entradas queda en `00:05:20`»                                                |
+| C9, `cellCommit` con el rótulo de lo tecleado (`:401`)                        | `timesheet-cell.test.tsx`, «con varias entradas conserva los segundos sueltos, como el servidor (TS-34)»                                                                                    |
+| `writtenSeconds` que devuelve `minutes × 60` siempre (`:139`)                 | 4 tests: el de `timesheet-cell.test.tsx` de arriba, «writtenSeconds … con varias conserva el resto» y los dos de la escritura en vuelo de D-WS2a-8                                          |
+| C9 en la celda, `cellCommit(text, cell, "compact")` (`timesheet-cell.tsx:46`) | Ningún test de unidad. La e2e, desde `0bff31c`: `duration-format.full.spec.ts:297`, con `writeCell(page, one, "5", "Enter")`. Con Tab sobrevivía                                            |
+| La vista de la planilla con `format: "compact"` (`timesheet-view.tsx:124`)    | `timesheet-view.test.tsx`, «la celda y los totales siguen el formato de duración del proveedor»                                                                                             |
+| S1, `toView` en `"compact"` fijo (`time-entry/service.ts:217`)                | 3 de «S1: durationLabel con el formato de duración del workspace» en `time-entry/service.integration.test.ts`, y el criterio 6 de `actions.integration.test.ts`                             |
+| `timeSettingsOf` en `"compact"` fijo (`profile/service.ts`)                   | «timeSettingsOf con el formato de duración (D-WS2a-3)», los dos de `profile/service.integration.test.ts`, y el criterio 6                                                                   |
+| El `left join` cambiado por `inner join` (`workspace/repository.ts:79`)       | `workspace/service.integration.test.ts`, «sin la fila de ajustes trae compact … (WS-73)» y «lee los ajustes del workspace más viejo, no los de otro»                                        |
+| `left join … on true`                                                         | «lee los ajustes del workspace más viejo, no los de otro», desde `d0516d8` (antes sobrevivía)                                                                                               |
+| `contextOf` en `"compact"` fijo (`workspace/service.ts`)                      | «trae el valor escrito en la base», «cada persona del workspace recibe el mismo formato», «el check de la base acepta cada valor…» y el criterio 6                                          |
+| El valor por omisión en `"full"` (`resolveDurationFormat`)                    | «resolveDurationFormat … sin fila de ajustes da compact» y «sin la fila de ajustes trae compact … (WS-73)»                                                                                  |
 
 Las cuatro que la unidad no mata son las de §9.1, «lo que solo aparece con
-interacción». Las mutaciones e2e de C6 y C9 las corrió `ws2a-fix-e2e` sobre
-`0bff31c`, con el resto del spec del completo en verde. Antes de `0bff31c`
-sobrevivían las dos, como encontró la revisión de tests.
+interacción», y las cuatro las mata la e2e del completo. Las corrió
+`ws2a-fix-e2e`: C6 y C9 sobre `0bff31c`, y C2 y C3 sobre `64ffa09`, cada una
+con los otros cinco tests del spec en verde. Antes de `0bff31c`, C6 y C9
+sobrevivían, como encontró la revisión de tests.
 
 ## Rebase sobre `main`
 
@@ -438,10 +439,13 @@ mismo árbol, después del rebase.
 2. **El comentario repetido de `timeSettingsOf`** (`profile/service.ts:145`).
    Corregido en `29db1b1`: se borró y quedó el docstring.
 3. **`timesButton` y `trackerWeek` duplicados en la e2e.** Corregido en
-   `0bff31c` (`ws2a-fix-e2e`): se exportan de `e2e/tracker-page.ts`, y el spec
-   del completo, `bulk-actions.spec.ts`, `entry-times.spec.ts` y
-   `week-and-pagination.spec.ts` los importan de ahí. En este último,
-   `weekGroup` pasó a llamarse `trackerWeek`.
+   `0bff31c`, `4f00052` y `64ffa09` (`ws2a-fix-e2e`): se exportan de
+   `e2e/tracker-page.ts`, y el spec del completo, `bulk-actions.spec.ts`,
+   `entry-times.spec.ts`, `week-and-pagination.spec.ts` y `profile.spec.ts`
+   los importan de ahí. En `week-and-pagination.spec.ts`, `weekGroup` pasó a
+   llamarse `trackerWeek`. `trackerWeekTotal`, de `calendar.spec.ts:119`, armaba
+   a mano la región de la semana, y ahora usa `trackerWeek`. No queda ninguna
+   copia de los dos localizadores en `e2e/`.
 4. **`rejection` repetido en los tests de integración.** Corregido en
    `29db1b1`, con un desvío que aprobó el team-lead: el helper se exporta una
    vez desde `src/test/queries.ts` y lo usan las otras cinco copias (los
@@ -551,4 +555,26 @@ Es la lentitud de `/equipo` con unas 1100 membresías, que ya figuraba como
 preexistente, agravada por la carga.
 
 Las tres corridas son anteriores a `72aee90` y `29db1b1`, el ancho del campo y
-las correcciones del backend: el `build` de la e2e no las incluye.
+las correcciones del backend: el `build` de la e2e no las incluye. Después,
+`ws2a-fix-e2e` corrió la suite entera una vez más sobre `64ffa09`, que ya las
+trae, con `clock_ws2a_fix_e2e3` reusada por segunda vez: 257 pasaron
+(1/248/1/6/1), sin flakes, y `durationFormatOf()` dio `compact`. Esa corrida
+cubre los specs que se tocaron, `calendar.spec.ts` y `profile.spec.ts`, pero no
+reemplaza la corrida final en una base nueva. Esa queda para después del
+próximo rebase: el MCP entra a `main` antes que WS2a, y la migración de WS2a
+se regenera como `0020`.
+
+## Corridas después de las revisiones
+
+En `977f469`, con las correcciones de los tres agentes, más este registro:
+
+| Corrida                    | Resultado                                                  |
+| -------------------------- | ---------------------------------------------------------- |
+| `npm run lint`             | sin errores                                                |
+| `npm run typecheck`        | sin errores                                                |
+| `npx prettier --check .`   | todo con formato                                           |
+| `npm test`                 | unidad 104 archivos, 2463 tests; `time-ar` 2 y 307         |
+| `npm run test:integration` | 32 archivos, 2017 tests, en `clock_ws2a_fix_final` (nueva) |
+
+El `build` y la e2e final en base nueva quedan para después del rebase sobre
+el MCP.
