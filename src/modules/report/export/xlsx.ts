@@ -18,13 +18,20 @@ const DAY_FORMAT = "yyyy-mm-dd";
 const CLOCK_FORMAT = "hh:mm";
 const SECONDS_PER_DAY = MINUTES_PER_DAY * 60;
 /**
- * Pasan de 24 h: una duración no es una hora del día. La celda guarda lo que
+ * El número de serie de una duración, la fracción de día, y su formato, que
+ * pasa de 24 h: una duración no es una hora del día. La celda guarda lo que
  * muestra (D-R6-6): el compacto, los minutos truncados; el completo, los
  * segundos.
  */
-const DURATION_NUMBER_FORMATS: Record<DurationFormat, string> = {
-  compact: "[h]:mm",
-  full: "[hh]:mm:ss",
+const DURATION_CELLS: Record<
+  DurationFormat,
+  { readonly serialOf: (seconds: number) => number; readonly numFmt: string }
+> = {
+  compact: {
+    serialOf: (seconds) => Math.floor(seconds / 60) / MINUTES_PER_DAY,
+    numFmt: "[h]:mm",
+  },
+  full: { serialOf: (seconds) => seconds / SECONDS_PER_DAY, numFmt: "[hh]:mm:ss" },
 };
 /**
  * En caracteres: entra `99999:59:59`. Con el ancho por omisión, 8,43, Excel
@@ -63,13 +70,6 @@ function clockMinutes(clock: string): number {
   return minutes;
 }
 
-/** El número de serie de una duración: la fracción de día que muestra su formato. */
-function durationValue(seconds: number, format: DurationFormat): number {
-  return format === "compact"
-    ? Math.floor(seconds / 60) / MINUTES_PER_DAY
-    : seconds / SECONDS_PER_DAY;
-}
-
 /** D-R6-12: el valor y el formato de cada celda; ninguna es una fórmula. */
 function valueOf(cell: ExportCell, durationFormat: DurationFormat): XlsxValue {
   switch (cell.kind) {
@@ -81,11 +81,10 @@ function valueOf(cell: ExportCell, durationFormat: DurationFormat): XlsxValue {
       return { value: daysBetweenKeys(EXCEL_EPOCH, cell.dayKey), numFmt: DAY_FORMAT };
     case "clock":
       return { value: clockMinutes(cell.clock) / MINUTES_PER_DAY, numFmt: CLOCK_FORMAT };
-    case "duration":
-      return {
-        value: durationValue(cell.seconds, durationFormat),
-        numFmt: DURATION_NUMBER_FORMATS[durationFormat],
-      };
+    case "duration": {
+      const { serialOf, numFmt } = DURATION_CELLS[durationFormat];
+      return { value: serialOf(cell.seconds), numFmt };
+    }
     case "hours":
       // Lo que se ve y lo que suma una planilla no pasan el total (D-R6-6).
       return { value: truncatedHours(cell.minutes), numFmt: HOURS_FORMAT };
