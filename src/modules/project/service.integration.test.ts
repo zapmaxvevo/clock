@@ -15,16 +15,25 @@ import {
   workspace,
 } from "@/server/db/schema";
 import { can, ForbiddenError, type Actor, type Role } from "@/server/permissions";
-import { raceThroughBarrier } from "@/test/concurrency";
+import {
+  fulfilledValue,
+  outcomeWhileHeld,
+  queueBehindBarrier,
+  raceThroughBarrier,
+} from "@/test/concurrency";
 import {
   seedClient,
   seedMember,
   seedProject,
   seedTag,
   seedTask,
+  seedTimeEntry,
   seedWorkspace,
 } from "@/test/factories";
-import { auditFor } from "@/test/queries";
+import { auditFor, timeEntryById } from "@/test/queries";
+import { workspaceOf } from "@/test/time-entry";
+import { createManualEntryInput } from "@/modules/time-entry/schema";
+import { createManualEntry } from "@/modules/time-entry/service";
 
 import { nextPaletteColor } from "./palette";
 import { projectRepository } from "./repository";
@@ -34,12 +43,14 @@ import {
   createTagInput,
   createTaskInput,
   projectMessages,
+  updateProjectInput,
   type CreateClientInput,
   type CreateProjectInput,
   type CreateTagInput,
   type CreateTaskInput,
-  type ProjectCatalog,
+  type ProjectListView,
   type TrackingCatalog,
+  type UpdateProjectInput,
 } from "./schema";
 import {
   assertTaggable,
@@ -48,10 +59,11 @@ import {
   createProject,
   createTag,
   createTask,
-  getProjectCatalog,
   getProjectFilterCatalog,
+  getProjectList,
   getTrackingCatalog,
   ProjectError,
+  updateProject,
 } from "./service";
 
 let workspaceId: string;
@@ -206,16 +218,7 @@ describe("createProject (criterio 6: PR-12 … PR-17, PR-19, PR-30, PR-58, PR-86
 
     const result = await createProject(member, values);
 
-    expect(result).toEqual({
-      project: {
-        id: values.id,
-        name: "Web",
-        color: "teal",
-        isPublic: true,
-        canCreateTask: true,
-        tasks: [],
-      },
-    });
+    expect(result).toEqual({ project: { id: values.id, name: "Web", color: "teal" } });
     const [row] = await projectRows();
     expect(row).toMatchObject({
       id: values.id,
@@ -402,7 +405,7 @@ describe("createTask (criterio 7: PR-35, PR-36, PR-40, PR-58)", () => {
   });
 });
 
-describe("getProjectCatalog: el filtro de lectura (criterio 9: PR-61, PR-62, PR-93)", () => {
+describe("getProjectList: la lista de /proyectos (criterio 12 de P1: PR-31, PR-61, PR-62, PR-93)", () => {
   async function seedMixedWorkspace() {
     const acme = await seedClient({ workspaceId, name: "acme" });
     const secret = await seedClient({ workspaceId, name: "Secreto" });
@@ -434,13 +437,12 @@ describe("getProjectCatalog: el filtro de lectura (criterio 9: PR-61, PR-62, PR-
     return { acme, secret, bravo, lonely, web, app, vault, joined, free, old };
   }
 
-  const names = (catalog: ProjectCatalog) =>
-    catalog.groups.map((group) => [
-      group.client?.name ?? null,
-      group.projects.map((view) => view.name),
-    ]);
+  const names = (list: ProjectListView) => list.projects.map((item) => item.name);
 
-  it("devuelve exactamente los proyectos activos que acepta can(…, project.view, …)", async () => {
+  const itemOf = (list: ProjectListView, id: string) =>
+    list.projects.find((item) => item.id === id);
+
+  it("devuelve exactamente los proyectos, activos y archivados, que acepta can(…, project.view, …)", async () => {
     await seedMixedWorkspace();
     const projects = await projectRows();
     const members = await db.select().from(projectMember);
@@ -451,70 +453,91 @@ describe("getProjectCatalog: el filtro de lectura (criterio 9: PR-61, PR-62, PR-
           const own = members.find(
             (item) => item.projectId === row.id && item.userId === actor.userId,
           );
-          return (
-            row.archivedAt === null &&
-            can(actor, "project.view", {
-              kind: "project",
-              workspaceId: row.workspaceId,
-              isPublic: row.isPublic,
-              viewer: own === undefined ? null : { isManager: own.isManager },
-            })
-          );
+          return can(actor, "project.view", {
+            kind: "project",
+            workspaceId: row.workspaceId,
+            isPublic: row.isPublic,
+            viewer: own === undefined ? null : { isManager: own.isManager },
+          });
         })
         .map((row) => row.id)
         .sort();
-      const catalog = await getProjectCatalog(actor);
-      const seen = catalog.groups.flatMap((group) =>
-        group.projects.map((view) => view.id),
-      );
-      expect(seen.sort()).toEqual(expected);
+      const list = await getProjectList(actor);
+      expect(list.projects.map((item) => item.id).sort()).toEqual(expected);
     }
   });
 
-  it("un member no ve el privado ajeno ni sus tareas, y su cliente no forma grupo; el admin sí", async () => {
+  it("ordena plano por compareNames, con el archivado marcado; un member no ve el privado ajeno ni sus tareas y el admin sí", async () => {
     const seeded = await seedMixedWorkspace();
 
-    const forMember = await getProjectCatalog(member);
-    expect(names(forMember)).toEqual([
-      ["acme", ["app", "Web"]],
-      ["Bravo", ["Interno"]],
-      [null, ["Libre"]],
+    const forMember = await getProjectList(member);
+    expect(names(forMember)).toEqual(["app", "Interno", "Libre", "Viejo", "Web"]);
+    expect(
+      forMember.projects.flatMap((item) => item.tasks.map((row) => row.name)),
+    ).not.toContain("Secreta");
+    expect(
+      forMember.projects.map((item) => [item.name, item.archived, item.isPublic]),
+    ).toEqual([
+      ["app", false, true],
+      ["Interno", false, false],
+      ["Libre", false, true],
+      ["Viejo", true, true],
+      ["Web", false, true],
     ]);
-    const memberTasks = forMember.groups.flatMap((group) =>
-      group.projects.flatMap((view) => view.tasks.map((item) => item.name)),
-    );
-    expect(memberTasks).not.toContain("Secreta");
 
-    const forAdmin = await getProjectCatalog(admin);
+    const forAdmin = await getProjectList(admin);
     expect(names(forAdmin)).toEqual([
-      ["acme", ["app", "Web"]],
-      ["Bravo", ["Interno"]],
-      ["Secreto", ["Bóveda"]],
-      [null, ["Libre"]],
+      "app",
+      "Bóveda",
+      "Interno",
+      "Libre",
+      "Viejo",
+      "Web",
     ]);
-    const vault = forAdmin.groups
-      .flatMap((group) => group.projects)
-      .find((view) => view.id === seeded.vault.id);
-    expect(vault?.tasks).toEqual([{ id: expect.any(String), name: "Secreta" }]);
+    expect(itemOf(forAdmin, seeded.vault.id)?.tasks).toEqual([
+      { id: expect.any(String), name: "Secreta" },
+    ]);
   });
 
-  it("ordena tareas sin distinguir mayúsculas y deja fuera las hechas y las de archivados", async () => {
+  it("trae las tareas activas en orden alfabético, también las de un archivado, sin las hechas", async () => {
     const seeded = await seedMixedWorkspace();
-    const catalog = await getProjectCatalog(owner);
-    const web = catalog.groups
-      .flatMap((group) => group.projects)
-      .find((view) => view.id === seeded.web.id);
-    expect(web?.tasks.map((item) => item.name)).toEqual(["Diseño", "maquetado"]);
-    const all = catalog.groups.flatMap((group) =>
-      group.projects.map((view) => view.name),
-    );
-    expect(all).not.toContain("Viejo");
+    const list = await getProjectList(owner);
+    expect(itemOf(list, seeded.web.id)?.tasks.map((row) => row.name)).toEqual([
+      "Diseño",
+      "maquetado",
+    ]);
+    expect(itemOf(list, seeded.old.id)?.tasks.map((row) => row.name)).toEqual([
+      "Del archivado",
+    ]);
+    expect(itemOf(list, seeded.app.id)?.tasks).toEqual([]);
+  });
+
+  it("cada proyecto trae su cliente con el archivado del cliente, y null sin cliente", async () => {
+    const seeded = await seedMixedWorkspace();
+    const gone = await seedClient({ workspaceId, name: "Ido", archived: true });
+    const inherited = await seedProject({
+      workspaceId,
+      clientId: gone.id,
+      name: "Heredado",
+    });
+    const list = await getProjectList(member);
+    expect(itemOf(list, seeded.web.id)?.client).toEqual({
+      id: seeded.acme.id,
+      name: "acme",
+      archived: false,
+    });
+    expect(itemOf(list, inherited.id)?.client).toEqual({
+      id: gone.id,
+      name: "Ido",
+      archived: true,
+    });
+    expect(itemOf(list, seeded.free.id)?.client).toBeNull();
   });
 
   it("los clientes del diálogo son los activos, en orden alfabético, con o sin proyectos visibles", async () => {
     await seedMixedWorkspace();
-    const catalog = await getProjectCatalog(member);
-    expect(catalog.clients.map((row) => row.name)).toEqual([
+    const list = await getProjectList(member);
+    expect(list.clients.map((row) => row.name)).toEqual([
       "acme",
       "Bravo",
       "Secreto",
@@ -522,86 +545,119 @@ describe("getProjectCatalog: el filtro de lectura (criterio 9: PR-61, PR-62, PR-
     ]);
   });
 
-  it("marca canCreateTask con can(task.create) por proyecto", async () => {
+  it("canUpdate y canCreateTask siguen a can() y son falsos en un archivado", async () => {
     const seeded = await seedMixedWorkspace();
     const managed = await seedProject({
       workspaceId,
       name: "Propio",
       members: [{ userId: member.userId, isManager: true }],
     });
-    const catalog = await getProjectCatalog(member);
-    const flags = Object.fromEntries(
-      catalog.groups.flatMap((group) =>
-        group.projects.map((view) => [view.id, view.canCreateTask]),
-      ),
-    );
-    expect(flags).toEqual({
-      [seeded.web.id]: false,
-      [seeded.app.id]: false,
-      [seeded.joined.id]: false,
-      [seeded.free.id]: false,
-      [managed.id]: true,
+    const shelved = await seedProject({
+      workspaceId,
+      name: "Guardado",
+      archived: true,
+      members: [{ userId: member.userId, isManager: true }],
     });
-    const forAdmin = await getProjectCatalog(admin);
-    expect(
-      forAdmin.groups
-        .flatMap((group) => group.projects)
-        .every((view) => view.canCreateTask),
-    ).toBe(true);
+    const flags = (list: ProjectListView) =>
+      Object.fromEntries(
+        list.projects.map((item) => [item.id, [item.canUpdate, item.canCreateTask]]),
+      );
+
+    expect(flags(await getProjectList(member))).toEqual({
+      [seeded.web.id]: [false, false],
+      [seeded.app.id]: [false, false],
+      [seeded.joined.id]: [false, false],
+      [seeded.free.id]: [false, false],
+      [seeded.old.id]: [false, false],
+      [managed.id]: [true, true],
+      [shelved.id]: [false, false],
+    });
+    const forAdmin = await getProjectList(admin);
+    for (const item of forAdmin.projects) {
+      expect([item.name, item.canUpdate, item.canCreateTask]).toEqual([
+        item.name,
+        !item.archived,
+        !item.archived,
+      ]);
+    }
   });
 
-  it("un proyecto activo de un cliente archivado sigue en el grupo de su cliente", async () => {
-    const gone = await seedClient({ workspaceId, name: "Archivado", archived: true });
-    await seedProject({ workspaceId, clientId: gone.id, name: "Heredado" });
-    const catalog = await getProjectCatalog(member);
-    expect(names(catalog)).toEqual([["Archivado", ["Heredado"]]]);
-    expect(catalog.clients).toEqual([]);
+  it("settings viaja solo con canUpdate: un member que no es responsable no recibe la nota ni el facturable", async () => {
+    const acme = await seedClient({ workspaceId, name: "Acme" });
+    const managed = await seedProject({
+      workspaceId,
+      clientId: acme.id,
+      name: "Propio",
+      color: "pink",
+      billableByDefault: true,
+      members: [{ userId: member.userId, isManager: true }],
+    });
+    await db.update(project).set({ note: "Reservada" }).where(eq(project.id, managed.id));
+    const foreign = await seedProject({ workspaceId, name: "Ajeno" });
+    const shelved = await seedProject({ workspaceId, name: "Viejo", archived: true });
+
+    const forMember = await getProjectList(member);
+    expect(itemOf(forMember, managed.id)?.settings).toEqual({
+      id: managed.id,
+      name: "Propio",
+      clientId: acme.id,
+      color: "pink",
+      note: "Reservada",
+      billableByDefault: true,
+    });
+    expect(itemOf(forMember, foreign.id)?.settings).toBeNull();
+    expect(itemOf(forMember, shelved.id)?.settings).toBeNull();
+
+    const forAdmin = await getProjectList(admin);
+    expect(itemOf(forAdmin, foreign.id)?.settings).toMatchObject({ name: "Ajeno" });
+    expect(itemOf(forAdmin, shelved.id)?.settings).toBeNull();
   });
 
   it("no mezcla proyectos ni clientes de otro workspace", async () => {
     const other = await seedWorkspace();
     const foreign = await seedClient({ workspaceId: other.workspaceId, name: "Ajeno" });
     await seedProject({ workspaceId: other.workspaceId, clientId: foreign.id });
-    const catalog = await getProjectCatalog(owner);
-    expect(catalog.groups).toEqual([]);
-    expect(catalog.clients).toEqual([]);
+    const list = await getProjectList(owner);
+    expect(list.projects).toEqual([]);
+    expect(list.clients).toEqual([]);
   });
 
   it("habilita crear clientes y proyectos a un member activo y no a uno inactivo", async () => {
-    expect(await getProjectCatalog(member)).toMatchObject({
+    expect(await getProjectList(member)).toMatchObject({
       canCreateClient: true,
       canCreateProject: true,
     });
-    expect(await getProjectCatalog({ ...member, status: "inactive" })).toMatchObject({
+    expect(await getProjectList({ ...member, status: "inactive" })).toMatchObject({
       canCreateClient: false,
       canCreateProject: false,
     });
   });
 });
 
-describe("el vacío (criterio 13: PR-85)", () => {
-  it("un workspace sin proyectos devuelve groups vacío", async () => {
-    expect(await getProjectCatalog(member)).toEqual({
+describe("el vacío de la lista (PR-85, PR-89)", () => {
+  it("un workspace sin proyectos devuelve projects vacío", async () => {
+    expect(await getProjectList(member)).toEqual({
       canCreateClient: true,
       canCreateProject: true,
       canCreateTag: true,
       tags: [],
       clients: [],
-      groups: [],
+      projects: [],
     });
   });
 
   it("un workspace con solo un privado ajeno también, para ese member", async () => {
     await seedProject({ workspaceId, isPublic: false });
-    expect((await getProjectCatalog(member)).groups).toEqual([]);
+    expect((await getProjectList(member)).projects).toEqual([]);
   });
 
-  it("una membresía inactiva no ve ningún proyecto", async () => {
+  it("una membresía inactiva no ve ningún proyecto, ni archivado", async () => {
     await seedProject({
       workspaceId,
       members: [{ userId: member.userId, isManager: true }],
     });
-    expect((await getProjectCatalog({ ...member, status: "inactive" })).groups).toEqual(
+    await seedProject({ workspaceId, archived: true });
+    expect((await getProjectList({ ...member, status: "inactive" })).projects).toEqual(
       [],
     );
   });
@@ -617,13 +673,14 @@ describe("reintentar (criterio 10: §4.4, PR-90, PR-91, PR-108)", () => {
     expect(await auditFor("client", values.id)).toHaveLength(1);
   });
 
-  it("repetir un proyecto con el mismo id devuelve la misma vista, sin tareas y sin escribir", async () => {
+  it("repetir un proyecto con el mismo id devuelve la misma referencia sin escribir (D-P1-12)", async () => {
     const values = projectValues();
     const first = await createProject(member, values);
-    await seedTask({ workspaceId, projectId: values.id });
     const again = await createProject(member, values);
     expect(again).toEqual(first);
-    expect(again.project.canCreateTask).toBe(true);
+    expect(again).toEqual({
+      project: { id: values.id, name: values.name, color: expect.any(String) },
+    });
     expect(await projectRows()).toHaveLength(1);
     expect(await db.select().from(projectMember)).toHaveLength(1);
     expect(await auditFor("project", values.id)).toHaveLength(1);
@@ -984,15 +1041,13 @@ describe("getTrackingCatalog: el catálogo del selector (criterio 3: TT-08, PR-2
     }
   });
 
-  it("un admin que no es miembro no ve el privado, aunque lo vea en getProjectCatalog; el miembro member sí", async () => {
+  it("un admin que no es miembro no ve el privado, aunque lo vea en getProjectList; el miembro member sí", async () => {
     const seeded = await seedTrackingWorkspace();
 
     const forAdmin = projectsOf(await getTrackingCatalog(admin)).map((view) => view.id);
     expect(forAdmin).not.toContain(seeded.vault.id);
     expect(forAdmin).not.toContain(seeded.joined.id);
-    const viewed = (await getProjectCatalog(admin)).groups.flatMap((group) =>
-      group.projects.map((view) => view.id),
-    );
+    const viewed = (await getProjectList(admin)).projects.map((item) => item.id);
     expect(viewed).toContain(seeded.vault.id);
 
     const forMember = projectsOf(await getTrackingCatalog(member)).map((view) => view.id);
@@ -1038,15 +1093,33 @@ describe("getTrackingCatalog: el catálogo del selector (criterio 3: TT-08, PR-2
     expect(projectsOf(catalog).map((view) => view.id)).not.toContain(seeded.old.id);
   });
 
-  it("habilita el enlace a Proyectos con can(project.create) y una membresía inactiva no ve nada", async () => {
+  it("habilita «Crear proyecto» con can(project.create) y una membresía inactiva no ve nada", async () => {
     await seedTrackingWorkspace();
     expect((await getTrackingCatalog(member)).canCreateProject).toBe(true);
     expect(await getTrackingCatalog({ ...member, status: "inactive" })).toEqual({
       canCreateProject: false,
+      clients: [],
       canCreateTag: false,
       tags: [],
       groups: [],
     });
+  });
+
+  it("D-P1-12: trae los clientes activos en orden alfabético con project.create, y ninguno sin él", async () => {
+    const seeded = await seedTrackingWorkspace();
+    const zulu = await seedClient({ workspaceId, name: "Zulu" });
+    const bravo = await seedClient({ workspaceId, name: "bravo" });
+    const other = await seedWorkspace();
+    await seedClient({ workspaceId: other.workspaceId, name: "Ajeno" });
+
+    expect((await getTrackingCatalog(member)).clients).toEqual([
+      { id: seeded.acme.id, name: "acme" },
+      { id: bravo.id, name: "bravo" },
+      { id: zulu.id, name: "Zulu" },
+    ]);
+    expect((await getTrackingCatalog({ ...member, status: "inactive" })).clients).toEqual(
+      [],
+    );
   });
 
   it("no mezcla proyectos de otro workspace", async () => {
@@ -1054,6 +1127,7 @@ describe("getTrackingCatalog: el catálogo del selector (criterio 3: TT-08, PR-2
     await seedProject({ workspaceId: other.workspaceId });
     expect(await getTrackingCatalog(owner)).toEqual({
       canCreateProject: true,
+      clients: [],
       canCreateTag: true,
       tags: [],
       groups: [],
@@ -1384,7 +1458,7 @@ describe("assertTaggable (criterio 4 del 11b: TT-78, PR-45, PR-73)", () => {
 
 describe("las etiquetas de los catálogos (criterio 5 del 11b: PR-62, PR-60, TT-88)", () => {
   const catalogs = {
-    getProjectCatalog,
+    getProjectList,
     getTrackingCatalog,
   } as const;
 
@@ -1399,7 +1473,7 @@ describe("las etiquetas de los catálogos (criterio 5 del 11b: PR-62, PR-60, TT-
         await seedTag({ workspaceId, name: "Archivada", archived: true });
         await seedTag({ workspaceId: other.workspaceId, name: "Ajena" });
 
-        const catalog: ProjectCatalog | TrackingCatalog = await read(member);
+        const catalog: ProjectListView | TrackingCatalog = await read(member);
 
         expect(catalog.tags).toEqual([
           { id: alfa.id, name: "alfa" },
@@ -1623,5 +1697,487 @@ describe("getProjectFilterCatalog: lo que ofrecen los filtros del reporte (crite
         [joined.id, { isManager: false }],
       ].sort(([left], [right]) => String(left).localeCompare(String(right))),
     );
+  });
+});
+
+describe("updateProject (P1: D-P1-3, D-P1-4, PR-12, PR-15, PR-21, PR-30, PR-55 … PR-57)", () => {
+  /** Lo que la action le pasa al service: la entrada ya validada por Zod. */
+  function patch(input: UpdateProjectInput) {
+    return updateProjectInput.parse(input);
+  }
+
+  async function projectRow(id: string) {
+    const [row] = await db.select().from(project).where(eq(project.id, id));
+    return row;
+  }
+
+  /** Las constancias `project.update` de un proyecto, con sus valores leídos. */
+  async function updatesOf(id: string) {
+    const rows = await auditFor("project", id);
+    return rows
+      .filter((row) => row.action === "project.update")
+      .map((row) => ({
+        actorId: row.actorId,
+        workspaceId: row.workspaceId,
+        previousValue:
+          row.previousValue === null ? null : (JSON.parse(row.previousValue) as unknown),
+        nextValue: row.nextValue === null ? null : (JSON.parse(row.nextValue) as unknown),
+      }));
+  }
+
+  /** Un proyecto con valores conocidos y un responsable `member`. */
+  async function seedEditable() {
+    const acme = await seedClient({ workspaceId, name: "Acme" });
+    const globex = await seedClient({ workspaceId, name: "Globex" });
+    const manager = await seedActor("member");
+    const web = await seedProject({
+      workspaceId,
+      clientId: acme.id,
+      name: "Web",
+      color: "teal",
+      billableByDefault: false,
+      members: [{ userId: manager.userId, isManager: true }],
+    });
+    // Un `updated_at` en el pasado: que avance no depende del reloj.
+    await db
+      .update(project)
+      .set({ note: "Sitio", updatedAt: new Date("2026-01-01T00:00:00Z") })
+      .where(eq(project.id, web.id));
+    return { acme, globex, manager, web: await projectRow(web.id) };
+  }
+
+  describe("criterio 1: editar los cinco campos", () => {
+    for (const who of ["admin", "owner", "responsable"] as const) {
+      it(`${who} cambia nombre, cliente, color, nota y facturable, avanza updated_at y deja la constancia`, async () => {
+        const { acme, globex, manager, web } = await seedEditable();
+        const actor = who === "admin" ? admin : who === "owner" ? owner : manager;
+
+        const result = await updateProject(
+          actor,
+          patch({
+            id: web.id,
+            name: " App ",
+            clientId: globex.id,
+            color: "red",
+            note: " Nueva ",
+            billableByDefault: true,
+          }),
+        );
+
+        const expected = {
+          id: web.id,
+          name: "App",
+          clientId: globex.id,
+          color: "red",
+          note: "Nueva",
+          billableByDefault: true,
+        };
+        expect(result).toEqual({ project: expected });
+        const row = await projectRow(web.id);
+        expect(row).toMatchObject(expected);
+        expect(row.updatedAt.getTime()).toBeGreaterThan(web.updatedAt.getTime());
+        expect(await updatesOf(web.id)).toEqual([
+          {
+            actorId: actor.userId,
+            workspaceId,
+            previousValue: {
+              name: "Web",
+              clientId: acme.id,
+              color: "teal",
+              note: "Sitio",
+              billableByDefault: false,
+            },
+            nextValue: {
+              name: "App",
+              clientId: globex.id,
+              color: "red",
+              note: "Nueva",
+              billableByDefault: true,
+            },
+          },
+        ]);
+      });
+    }
+  });
+
+  it("criterio 2: un parche con solo la nota deja el resto igual, y la constancia nombra solo note", async () => {
+    const { acme, web } = await seedEditable();
+
+    const result = await updateProject(admin, patch({ id: web.id, note: "Otra" }));
+
+    expect(result.project).toEqual({
+      id: web.id,
+      name: "Web",
+      clientId: acme.id,
+      color: "teal",
+      note: "Otra",
+      billableByDefault: false,
+    });
+    expect(await projectRow(web.id)).toMatchObject({
+      name: "Web",
+      clientId: acme.id,
+      color: "teal",
+      note: "Otra",
+      billableByDefault: false,
+    });
+    expect(await updatesOf(web.id)).toEqual([
+      expect.objectContaining({
+        previousValue: { note: "Sitio" },
+        nextValue: { note: "Otra" },
+      }),
+    ]);
+  });
+
+  it("criterio 3: los valores que ya tiene responden éxito sin escribir ni dejar constancia", async () => {
+    const { acme, web } = await seedEditable();
+    const settings = {
+      id: web.id,
+      name: "Web",
+      clientId: acme.id,
+      color: "teal",
+      note: "Sitio",
+      billableByDefault: false,
+    } as const;
+
+    expect(await updateProject(admin, patch(settings))).toEqual({ project: settings });
+    expect(
+      await updateProject(
+        admin,
+        patch({ id: web.id.toUpperCase(), clientId: acme.id.toUpperCase() }),
+      ),
+    ).toEqual({ project: settings });
+    expect((await projectRow(web.id)).updatedAt).toEqual(web.updatedAt);
+    expect(await updatesOf(web.id)).toEqual([]);
+  });
+
+  describe("criterio 4: quién (PR-55 … PR-57, PR-60)", () => {
+    it("project_manager, team_manager y member que no son responsables reciben forbidden sin escribir", async () => {
+      const { web } = await seedEditable();
+      const plain = await seedActor("member");
+      await db.insert(projectMember).values({
+        workspaceId,
+        projectId: web.id,
+        userId: plain.userId,
+        isManager: false,
+      });
+      for (const actor of [
+        await seedActor("project_manager"),
+        await seedActor("team_manager"),
+        member,
+        plain,
+      ]) {
+        await expectForbidden(updateProject(actor, patch({ id: web.id, name: "App" })));
+      }
+      expect(await projectRow(web.id)).toMatchObject({ name: "Web" });
+      expect(await updatesOf(web.id)).toEqual([]);
+    });
+
+    it("un project_manager responsable de otro proyecto recibe forbidden en este", async () => {
+      const { web } = await seedEditable();
+      const pm = await seedActor("project_manager");
+      await seedProject({
+        workspaceId,
+        name: "Suyo",
+        members: [{ userId: pm.userId, isManager: true }],
+      });
+      await expectForbidden(updateProject(pm, patch({ id: web.id, name: "App" })));
+      expect(await updatesOf(web.id)).toEqual([]);
+    });
+
+    it("un project_manager o team_manager responsable sí edita", async () => {
+      const { web } = await seedEditable();
+      for (const role of ["project_manager", "team_manager"] as const) {
+        const actor = await seedActor(role);
+        await db.insert(projectMember).values({
+          workspaceId,
+          projectId: web.id,
+          userId: actor.userId,
+          isManager: true,
+        });
+        await updateProject(actor, patch({ id: web.id, note: `De ${role}` }));
+      }
+      expect(await projectRow(web.id)).toMatchObject({ note: "De team_manager" });
+    });
+
+    it("admin, responsable y owner con la membresía no activa reciben PR-72 sin escribir", async () => {
+      const { manager, web } = await seedEditable();
+      // El owner inactivo va sintético: un segundo owner no se siembra (§10).
+      for (const actor of [admin, manager, owner]) {
+        for (const status of ["inactive", "invited"] as const) {
+          await expectProjectError(
+            updateProject({ ...actor, status }, patch({ id: web.id, name: "App" })),
+            "not_found",
+            projectMessages.projectUnavailable,
+          );
+        }
+      }
+      expect(await projectRow(web.id)).toMatchObject({ name: "Web" });
+      expect(await updatesOf(web.id)).toEqual([]);
+    });
+
+    it("owner y admin editan un privado del que no son miembros", async () => {
+      const vault = await seedProject({ workspaceId, name: "Bóveda", isPublic: false });
+      await updateProject(owner, patch({ id: vault.id, note: "Del owner" }));
+      await updateProject(admin, patch({ id: vault.id, name: "Caja" }));
+      expect(await projectRow(vault.id)).toMatchObject({
+        name: "Caja",
+        note: "Del owner",
+      });
+    });
+  });
+
+  describe("criterio 5: el proyecto (PR-72)", () => {
+    it("uno inexistente, de otro workspace, archivado o privado ajeno responde PR-72 sin escribir", async () => {
+      const other = await seedWorkspace();
+      const foreign = await seedProject({
+        workspaceId: other.workspaceId,
+        name: "Ajeno",
+      });
+      const shelved = await seedProject({
+        workspaceId,
+        name: "Viejo",
+        archived: true,
+        members: [{ userId: member.userId, isManager: true }],
+      });
+      const vault = await seedProject({ workspaceId, name: "Bóveda", isPublic: false });
+      const cases = [
+        [owner, randomUUID()],
+        [owner, foreign.id],
+        [owner, shelved.id],
+        [admin, shelved.id],
+        [member, shelved.id],
+        [member, vault.id],
+      ] as const;
+      for (const [actor, id] of cases) {
+        await expectProjectError(
+          updateProject(actor, patch({ id, name: "Otro" })),
+          "not_found",
+          projectMessages.projectUnavailable,
+        );
+      }
+      expect(await projectRow(foreign.id)).toMatchObject({ name: "Ajeno" });
+      expect(await projectRow(shelved.id)).toMatchObject({ name: "Viejo" });
+      expect(await auditFor("project")).toEqual([]);
+    });
+
+    it("el archivado responde PR-72 aunque el parche no cambie nada", async () => {
+      const shelved = await seedProject({ workspaceId, name: "Viejo", archived: true });
+      await expectProjectError(
+        updateProject(owner, patch({ id: shelved.id, name: "Viejo" })),
+        "not_found",
+        projectMessages.projectUnavailable,
+      );
+    });
+  });
+
+  describe("criterio 6: el cliente (PR-83, PR-98)", () => {
+    it("pasar a un cliente archivado, de otro workspace o inexistente responde PR-83 sin escribir", async () => {
+      const { web } = await seedEditable();
+      const gone = await seedClient({ workspaceId, name: "Ido", archived: true });
+      const other = await seedWorkspace();
+      const foreign = await seedClient({ workspaceId: other.workspaceId, name: "Ajeno" });
+      for (const clientId of [gone.id, foreign.id, randomUUID()]) {
+        await expectProjectError(
+          updateProject(owner, patch({ id: web.id, clientId, note: "Cambio" })),
+          "not_found",
+          projectMessages.clientUnavailable,
+        );
+      }
+      expect(await projectRow(web.id)).toMatchObject({ note: "Sitio" });
+      expect(await updatesOf(web.id)).toEqual([]);
+    });
+
+    it("un proyecto con cliente archivado se renombra sin cambiar el cliente, aunque el parche lo nombre", async () => {
+      const gone = await seedClient({ workspaceId, name: "Ido", archived: true });
+      const heir = await seedProject({
+        workspaceId,
+        clientId: gone.id,
+        name: "Heredado",
+      });
+
+      await updateProject(owner, patch({ id: heir.id, name: "Renombrado" }));
+      await updateProject(
+        owner,
+        patch({ id: heir.id, clientId: gone.id, note: "Con el mismo cliente" }),
+      );
+
+      expect(await projectRow(heir.id)).toMatchObject({
+        name: "Renombrado",
+        clientId: gone.id,
+        note: "Con el mismo cliente",
+      });
+    });
+
+    it("un cliente en mayúsculas queda en la constancia y en el resultado como lo guardó la base", async () => {
+      const { acme, globex, web } = await seedEditable();
+      const result = await updateProject(
+        owner,
+        patch({ id: web.id, clientId: globex.id.toUpperCase() }),
+      );
+      expect(result.project.clientId).toBe(globex.id);
+      expect(await updatesOf(web.id)).toEqual([
+        expect.objectContaining({
+          previousValue: { clientId: acme.id },
+          nextValue: { clientId: globex.id },
+        }),
+      ]);
+    });
+
+    it("pasar a «Sin cliente» funciona y la constancia guarda el anterior", async () => {
+      const { acme, web } = await seedEditable();
+      const result = await updateProject(owner, patch({ id: web.id, clientId: null }));
+      expect(result.project.clientId).toBeNull();
+      expect(await projectRow(web.id)).toMatchObject({ clientId: null });
+      expect(await updatesOf(web.id)).toEqual([
+        expect.objectContaining({
+          previousValue: { clientId: acme.id },
+          nextValue: { clientId: null },
+        }),
+      ]);
+    });
+  });
+
+  describe("criterio 7: el nombre repetido (PR-77, PR-91)", () => {
+    it("repetido para el mismo cliente, aunque cambien las mayúsculas, responde PR-77 sin escribir", async () => {
+      const { acme, web } = await seedEditable();
+      await seedProject({ workspaceId, clientId: acme.id, name: "App" });
+      await expectProjectError(
+        updateProject(owner, patch({ id: web.id, name: "APP" })),
+        "validation",
+        projectMessages.projectNameTaken,
+      );
+      expect(await projectRow(web.id)).toMatchObject({ name: "Web" });
+      expect(await updatesOf(web.id)).toEqual([]);
+    });
+
+    it("cambiar el cliente a uno que ya tiene un proyecto con ese nombre responde PR-77", async () => {
+      const { acme, globex, web } = await seedEditable();
+      await seedProject({ workspaceId, clientId: globex.id, name: "Web" });
+      await expectProjectError(
+        updateProject(owner, patch({ id: web.id, clientId: globex.id })),
+        "validation",
+        projectMessages.projectNameTaken,
+      );
+      expect(await projectRow(web.id)).toMatchObject({ clientId: acme.id });
+      expect(await updatesOf(web.id)).toEqual([]);
+    });
+
+    it("pasar a «Sin cliente» choca con otro sin cliente del mismo nombre (PR-50)", async () => {
+      const { web } = await seedEditable();
+      await seedProject({ workspaceId, name: "Web" });
+      await expectProjectError(
+        updateProject(owner, patch({ id: web.id, clientId: null })),
+        "validation",
+        projectMessages.projectNameTaken,
+      );
+    });
+
+    it("el mismo nombre con otro cliente funciona, y cambiar solo las mayúsculas del propio también", async () => {
+      const { acme, globex, web } = await seedEditable();
+      await seedProject({ workspaceId, clientId: globex.id, name: "App" });
+      await updateProject(owner, patch({ id: web.id, name: "App" }));
+      expect(await projectRow(web.id)).toMatchObject({ name: "App", clientId: acme.id });
+      await updateProject(owner, patch({ id: web.id, name: "APP" }));
+      expect(await projectRow(web.id)).toMatchObject({ name: "APP" });
+    });
+  });
+
+  describe("criterio 9: dos a la vez (D-P1-3)", () => {
+    const lockedBy = (id: string) => (tx: Transaction) =>
+      projectRepository.lockProject(tx, workspaceId, id);
+
+    it("dos ediciones de campos distintos esperan, terminan las dos y quedan los dos cambios", async () => {
+      const { web } = await seedEditable();
+      const outcomes = await queueBehindBarrier(lockedBy(web.id), [
+        () => updateProject(owner, patch({ id: web.id, note: "Del owner" })),
+        () => updateProject(admin, patch({ id: web.id, color: "red" })),
+      ]);
+      outcomes.forEach(fulfilledValue);
+      expect(await projectRow(web.id)).toMatchObject({ note: "Del owner", color: "red" });
+      expect(await updatesOf(web.id)).toHaveLength(2);
+    });
+
+    it("dos del mismo campo dejan el de la segunda, y su constancia tiene como anterior el de la primera", async () => {
+      const { web } = await seedEditable();
+      const outcomes = await queueBehindBarrier(lockedBy(web.id), [
+        () => updateProject(owner, patch({ id: web.id, name: "Uno" })),
+        () => updateProject(admin, patch({ id: web.id, name: "Dos" })),
+      ]);
+      outcomes.forEach(fulfilledValue);
+      expect(await projectRow(web.id)).toMatchObject({ name: "Dos" });
+      const updates = await updatesOf(web.id);
+      expect(updates).toHaveLength(2);
+      expect(updates).toContainEqual(
+        expect.objectContaining({
+          actorId: admin.userId,
+          previousValue: { name: "Uno" },
+          nextValue: { name: "Dos" },
+        }),
+      );
+    });
+
+    it("lo que no espera: un alta de horas con el proyecto y un alta de tarea en él", async () => {
+      const { web } = await seedEditable();
+      const entry = outcomeWhileHeld(lockedBy(web.id), () =>
+        createManualEntry(
+          member,
+          workspaceOf("America/Argentina/Buenos_Aires"),
+          createManualEntryInput.parse({
+            id: randomUUID(),
+            date: "2026-10-02",
+            start: "08:00",
+            end: "09:00",
+            projectId: web.id,
+            taskId: null,
+            tagIds: [],
+          }),
+        ),
+      );
+      expect(await entry).toBe("resolved");
+      expect(
+        await outcomeWhileHeld(lockedBy(web.id), () =>
+          createTask(owner, taskValues(web.id)),
+        ),
+      ).toBe("resolved");
+    });
+  });
+
+  it("criterio 10: cambiar el facturable no toca entradas, y una entrada nueva arranca con el valor nuevo (TT-14)", async () => {
+    const { web } = await seedEditable();
+    const first = await seedTimeEntry({
+      workspaceId,
+      userId: member.userId,
+      startedAt: "2026-10-01T10:00:00Z",
+      endedAt: "2026-10-01T11:00:00Z",
+      projectId: web.id,
+      billable: false,
+    });
+    const second = await seedTimeEntry({
+      workspaceId,
+      userId: member.userId,
+      startedAt: "2026-10-01T12:00:00Z",
+      endedAt: "2026-10-01T13:00:00Z",
+      projectId: web.id,
+      billable: true,
+    });
+
+    await updateProject(owner, patch({ id: web.id, billableByDefault: true }));
+
+    expect((await timeEntryById(first.id))?.billable).toBe(false);
+    expect((await timeEntryById(second.id))?.billable).toBe(true);
+    const { created } = await createManualEntry(
+      member,
+      workspaceOf("America/Argentina/Buenos_Aires"),
+      createManualEntryInput.parse({
+        id: randomUUID(),
+        date: "2026-10-02",
+        start: "08:00",
+        end: "09:00",
+        projectId: web.id,
+        taskId: null,
+        tagIds: [],
+      }),
+    );
+    expect(created.billable).toBe(true);
   });
 });

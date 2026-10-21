@@ -1,13 +1,30 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import type { ProjectSelection, TrackingCatalog } from "@/modules/project/schema";
+import { Combobox } from "@/components/ui/combobox";
+import type {
+  ProjectActions,
+  ProjectSelection,
+  TrackingCatalog,
+} from "@/modules/project/schema";
+import { textOf as visibleText } from "@/test/markup";
 
-import { ProjectPicker } from "./project-picker";
+import { pickerView } from "./picker-model";
+import {
+  pickerComboboxProps,
+  PickerEmptyMessage,
+  PickerOptions,
+  ProjectPicker,
+} from "./project-picker";
 import { TrackingCatalogProvider } from "./tracking-catalog";
+
+/** D-P1-13: el doble de la action del alta; el marcado inicial no la llama. */
+const createProject: ProjectActions["createProject"] = () =>
+  Promise.resolve({ ok: false, code: "unexpected", message: "doble" });
 
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  clients: [],
   canCreateTag: true,
   tags: [],
   groups: [
@@ -42,7 +59,7 @@ type Options = {
 
 function render(value: ProjectSelection, options: Options = {}): string {
   return renderToStaticMarkup(
-    <TrackingCatalogProvider catalog={catalog}>
+    <TrackingCatalogProvider catalog={catalog} createProject={createProject}>
       <ProjectPicker
         value={value}
         onChange={() => undefined}
@@ -58,7 +75,7 @@ function render(value: ProjectSelection, options: Options = {}): string {
 /** El selector de la edición masiva: «Sin cambios» con `value` nulo. */
 function renderWithPlaceholder(value: ProjectSelection | null): string {
   return renderToStaticMarkup(
-    <TrackingCatalogProvider catalog={catalog}>
+    <TrackingCatalogProvider catalog={catalog} createProject={createProject}>
       <ProjectPicker
         value={value}
         placeholder="Sin cambios"
@@ -157,5 +174,96 @@ describe("ProjectPicker", () => {
         />,
       ),
     ).toThrow("TrackingCatalogProvider");
+  });
+});
+
+/**
+ * La lista del popup, dentro de una raíz abierta con las mismas props que le
+ * da el selector: el popup va en un portal, que el marcado estático no dibuja.
+ */
+function renderOptions(
+  source: TrackingCatalog,
+  value: ProjectSelection | null,
+  search = "",
+): string {
+  const view = pickerView(source, search);
+  return renderToStaticMarkup(
+    <Combobox {...pickerComboboxProps(view, value)} open>
+      <PickerOptions view={view} />
+    </Combobox>,
+  );
+}
+
+/** Las opciones de la lista, cada una con su apertura y su texto. */
+function optionsOf(markup: string): { readonly tag: string; readonly text: string }[] {
+  return [...markup.matchAll(/(<div[^>]*role="option"[^>]*>)(.*?)<\/div>/g)].map(
+    ([, tag, content]) => ({ tag, text: visibleText(content) }),
+  );
+}
+
+describe("ProjectPicker, «Crear proyecto» (TT-09, D-P1-10)", () => {
+  it("con `canCreateProject`, «Crear proyecto» es la última opción, después de los proyectos", () => {
+    const options = optionsOf(renderOptions(catalog, projectOnly));
+
+    expect(options.map((option) => option.text)).toEqual([
+      "Sin proyecto",
+      "Web",
+      "Diseño",
+      "Crear proyecto",
+    ]);
+    expect(options.at(-1)?.tag).toContain('role="option"');
+  });
+
+  it("aparece también con una búsqueda sin coincidencias", () => {
+    const options = optionsOf(renderOptions(catalog, projectOnly, "zzz"));
+
+    expect(options.map((option) => option.text)).toEqual(["Crear proyecto"]);
+  });
+
+  it("sin `canCreateProject` no hay opción de crear", () => {
+    const markup = renderOptions({ ...catalog, canCreateProject: false }, projectOnly);
+
+    expect(markup).not.toContain("Crear proyecto");
+    expect(optionsOf(markup).map((option) => option.text)).toEqual([
+      "Sin proyecto",
+      "Web",
+      "Diseño",
+    ]);
+  });
+
+  it("con «Sin proyecto» elegido, solo esa opción queda marcada; «Crear proyecto» nunca", () => {
+    const options = optionsOf(renderOptions(catalog, none));
+    const selected = options.filter((option) =>
+      option.tag.includes('aria-selected="true"'),
+    );
+
+    expect(selected.map((option) => option.text)).toEqual(["Sin proyecto"]);
+    expect(options.at(-1)?.tag).toContain('aria-selected="false"');
+  });
+
+  it("con el catálogo vacío ofrece «Sin proyecto» y «Crear proyecto» (TT-87, TS-88)", () => {
+    const empty: TrackingCatalog = { ...catalog, groups: [] };
+
+    expect(optionsOf(renderOptions(empty, none)).map((option) => option.text)).toEqual([
+      "Sin proyecto",
+      "Crear proyecto",
+    ]);
+  });
+
+  it("el vacío de TT-87 dice «No hay proyectos todavía», sin «Ir a Proyectos»", () => {
+    const markup = renderToStaticMarkup(
+      <PickerEmptyMessage empty={{ kind: "noProjects" }} />,
+    );
+
+    expect(visibleText(markup)).toBe("No hay proyectos todavía");
+    expect(markup).not.toContain("Ir a Proyectos");
+    expect(markup).not.toContain("<a");
+  });
+
+  it("en solo lectura no hay opción de crear ni lista", () => {
+    const markup = render(projectOnly, { readOnly: true });
+
+    expect(markup).not.toContain("Crear proyecto");
+    expect(markup).not.toContain('role="option"');
   });
 });

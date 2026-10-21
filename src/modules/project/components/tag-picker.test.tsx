@@ -1,17 +1,22 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import type { TagRef, TrackingCatalog } from "@/modules/project/schema";
+import type { ProjectActions, TagRef, TrackingCatalog } from "@/modules/project/schema";
 
-import { closingChange, TagPicker } from "./tag-picker";
+import { closingChange, TagPicker, TagPickerEmptyMessage } from "./tag-picker";
 import { TrackingCatalogProvider } from "./tracking-catalog";
 
 const design: TagRef = { id: "t-design", name: "Diseño" };
 const review: TagRef = { id: "t-review", name: "revisión" };
 const urgent: TagRef = { id: "t-urgent", name: "Urgente" };
 
+/** D-P1-13: el doble de la action del alta; el marcado inicial no la llama. */
+const createProject: ProjectActions["createProject"] = () =>
+  Promise.resolve({ ok: false, code: "unexpected", message: "doble" });
+
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  clients: [],
   canCreateTag: true,
   groups: [],
   tags: [design, review, urgent],
@@ -25,7 +30,7 @@ type Options = {
 
 function render(value: readonly TagRef[], options: Options = {}): string {
   return renderToStaticMarkup(
-    <TrackingCatalogProvider catalog={catalog}>
+    <TrackingCatalogProvider catalog={catalog} createProject={createProject}>
       <TagPicker
         value={value}
         onChange={() => undefined}
@@ -117,6 +122,18 @@ describe("TagPicker", () => {
     for (const variant of ["bar", "row"] as const) {
       expect(render([], { variant, readOnly: true })).toBe("");
     }
+  });
+
+  it("sin etiquetas sigue ofreciendo «Ir a Proyectos» con `canCreateTag`, y no sin él (TT-88, D-P1-10)", () => {
+    const withPermission = renderToStaticMarkup(
+      <TagPickerEmptyMessage empty={{ kind: "noTags", canCreateTag: true }} />,
+    );
+    const without = renderToStaticMarkup(
+      <TagPickerEmptyMessage empty={{ kind: "noTags", canCreateTag: false }} />,
+    );
+
+    expect(withPermission).toMatch(/<a[^>]*href="\/proyectos"[^>]*>Ir a Proyectos<\/a>/);
+    expect(textOf(without)).toBe("No hay etiquetas todavía");
   });
 
   it("fuera del proveedor del catálogo lanza", () => {

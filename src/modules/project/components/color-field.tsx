@@ -11,6 +11,8 @@ type ColorFieldProps = {
   /** `null` mientras no se eligió ninguno: el servidor asigna uno (PR-15). */
   readonly value: PaletteKey | null;
   readonly onValueChange: (value: PaletteKey) => void;
+  /** PR-15: en el alta, que el servidor asigna uno si no se elige (D-P1-9). */
+  readonly hint?: string;
 };
 
 /**
@@ -18,7 +20,7 @@ type ColorFieldProps = {
  * elegido lleva una marca en el centro y un anillo, así el estado no depende
  * solo del color.
  */
-export function ColorField({ value, onValueChange }: ColorFieldProps) {
+export function ColorField({ value, onValueChange, hint }: ColorFieldProps) {
   const labelId = useId();
   const hintId = useId();
 
@@ -29,7 +31,7 @@ export function ColorField({ value, onValueChange }: ColorFieldProps) {
       </span>
       <RadioGroup
         aria-labelledby={labelId}
-        aria-describedby={hintId}
+        aria-describedby={hint === undefined ? undefined : hintId}
         value={value}
         onValueChange={(next) => {
           if (typeof next === "string" && isPaletteKey(next)) {
@@ -49,9 +51,11 @@ export function ColorField({ value, onValueChange }: ColorFieldProps) {
           />
         ))}
       </RadioGroup>
-      <p id={hintId} className="text-muted-foreground text-xs">
-        {projectLabels.colorHint}
-      </p>
+      {hint === undefined ? null : (
+        <p id={hintId} className="text-muted-foreground text-xs">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }

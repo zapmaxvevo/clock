@@ -199,10 +199,45 @@ decía que los proyectos con tareas se expanden para elegir una tarea.
 La lista muestra los proyectos activos del workspace a los que la persona está
 asignada, más los públicos. Los proyectos archivados no aparecen.
 
-**TT-09 Crear proyecto desde el selector** — `fuera de alcance`
+**TT-09 Crear proyecto desde el selector** — `adaptar`
 Clockify ofrece «Crear proyecto» al final del buscador cuando el permiso lo
-habilita. Justificación: pertenece al módulo de proyectos; se agrega cuando ese
-módulo exista.
+habilita. Acá también, con `project.create`, como la última opción de la lista
+del selector, en todos los lugares que lo usan. Justificación: la opción es la
+de Clockify; cuándo aparece, el diálogo que abre y la selección que deja son
+diseño propio, fijado en D-P1-10 y D-P1-11 del
+[contrato de P1](../slices/fase2-p1-proyectos.md):
+
+- **Es una opción más del `listbox`**, en la barra, en una fila, en la
+  planilla, en el diálogo del calendario y en la edición masiva: se alcanza con
+  las flechas y se elige con Enter. No es una selección: nunca se marca ni
+  compara igual a «Sin proyecto».
+- **Aparece con cualquier búsqueda**, también sin coincidencias y con todo
+  excluido en la planilla (TS-18), y su texto es siempre «Crear proyecto».
+- **Abre el diálogo «Nuevo proyecto»**, con los campos del alta de `/proyectos`
+  y el nombre que arranca con la búsqueda recortada. El alta lleva el id que
+  eligió el navegador, así que «Reintentar» no crea un segundo proyecto
+  ([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)). Cerrarlo
+  devuelve el foco al disparador del selector.
+- **Con éxito, el proyecto nuevo queda elegido, sin tarea**, cuando el catálogo
+  de la pantalla ya lo trae, así arranca con su facturable por defecto (TT-14):
+  en la barra, para «Iniciar» o «Agregar»; en una fila o en el timer que corre,
+  se guarda sobre la entrada como cualquier cambio de proyecto; en los diálogos
+  del calendario y de la edición masiva, queda en el borrador; en la planilla,
+  la fila toma el par.
+- **Con falla**, el diálogo queda abierto con lo escrito y el aviso «No se pudo
+  crear el proyecto.», con la causa (PR-75 … PR-77, PR-83 y PR-84 de
+  [la paridad de proyectos](proyectos.md)). «Reintentar» aparece solo por red
+  (TT-89).
+- **Dentro de otro diálogo** (el del calendario o el de la edición masiva),
+  `Escape` cierra solo el de TT-09, y el de abajo sigue abierto con su
+  borrador.
+- **Con la membresía desactivada** (TT-92), el selector queda en solo lectura y
+  sin la opción.
+
+_Corregido el 2026-10-21, P1_: era `fuera de alcance`, con la justificación
+«pertenece al módulo de proyectos; se agrega cuando ese módulo exista». Entró
+con P1 por decisión del usuario del 2026-10-16 (mejora 2 de
+[las mejoras pedidas](../mejoras-pedidas.md)).
 
 **TT-10 Quitar el proyecto** — `replicar`
 Dentro del popover hay una opción para dejar la entrada sin proyecto. Una
@@ -306,10 +341,14 @@ nombre para el lector de pantalla son diseño propio sin referencia: no se
 comparan contra Clockify.
 
 **TT-13 Crear etiqueta desde el selector** — `fuera de alcance`
-Igual que TT-09: pertenece al módulo de etiquetas.
+Justificación: pertenece al módulo de etiquetas, y las etiquetas se crean en
+`/proyectos` (TT-88, PR-112 de [la paridad de proyectos](proyectos.md)).
 _Agregado el 2026-10-05_. Documentado: se escribe el nombre en el selector y se
 elige «Create tag» o `Ctrl + Enter`. En la fase 1 las etiquetas se crean en
 `/proyectos` (TT-88).
+_Corregido el 2026-10-21, P1_: decía «Igual que TT-09: pertenece al módulo de
+etiquetas.». TT-09 entró con P1 y ya no es `fuera de alcance`; TT-13 sigue
+fuera, con su propia justificación.
 
 ### 2.4 Facturable
 
@@ -1323,6 +1362,11 @@ fila comparten las funciones, no una copia.
   TT-13); elegir un proyecto o una etiqueta archivados, que el selector no
   ofrece y el servidor rechaza (TT-77, TT-78); y vaciar la descripción en
   bloque.
+  _Corregido el 2026-10-21, P1_: TT-09 entró con P1, así que el selector del
+  diálogo ofrece «Crear proyecto» con `project.create`, y el proyecto creado
+  queda en el borrador (D-P1-10 del
+  [contrato de P1](../slices/fase2-p1-proyectos.md)). Crear una etiqueta
+  (TT-13) sigue afuera.
 
 **TT-64 Borrado masivo** — `adaptar`
 Clockify pide escribir `DELETE` en el diálogo y después deja deshacer 20
@@ -1523,10 +1567,9 @@ también al cargar más.
 
 **TT-87 Workspace sin proyectos** — `adaptar`
 El selector de proyecto abre con «No hay proyectos todavía» y, si
-`project.create` lo permite, el enlace «Ir a Proyectos», que lleva a
-`/proyectos`. En la fase 1 lo permite a toda membresía activa (PR-59).
-Justificación: en Clockify ahí va «Crear proyecto», que es TT-09 y está fuera
-de alcance.
+`project.create` lo permite, la opción «Crear proyecto» (TT-09). Lo permite a
+toda membresía activa (PR-59). Justificación: la opción es la de Clockify; el
+texto del vacío es copia propia.
 
 **«Sin proyecto» se ofrece también con el catálogo vacío.** Diseño propio: es
 la única forma de quitarle a una entrada un proyecto archivado cuando no queda
@@ -1535,6 +1578,13 @@ ningún proyecto activo que ofrecer (TT-10 con TT-104).
 _Corregido el 2026-10-04, slice 10_: decía «si el rol lo permite, un enlace a
 la pantalla de proyectos», sin el texto del enlace ni la acción que lo
 habilita, y no decía qué pasa con «Sin proyecto».
+_Corregido el 2026-10-21, P1_: decía que, con `project.create`, el selector
+ofrecía el enlace «Ir a Proyectos», que lleva a `/proyectos`, porque «Crear
+proyecto» era TT-09 y estaba fuera de alcance. Con TT-09 dentro, «Crear
+proyecto» reemplaza al enlace (decisión del usuario del 2026-10-21, D-P1-10 del
+[contrato de P1](../slices/fase2-p1-proyectos.md)): con el catálogo vacío, la
+lista trae «Sin proyecto» y «Crear proyecto». El «Ir a Proyectos» del selector
+de etiquetas (TT-88) no cambia.
 
 **TT-88 Workspace sin etiquetas** — `adaptar`
 El selector de etiquetas abre con «No hay etiquetas todavía». Misma
@@ -1897,6 +1947,9 @@ slices 6 y 7. Contrato:
   propio; el rechazo al continuar y al duplicar es diseño propio _no
   verificado_ (P-14).
 - **TT-09**, crear un proyecto desde el selector, sigue fuera de alcance.
+  _Corregido el 2026-10-21, P1_: TT-09 entró con P1, en la fase 2, y con él
+  cambió el vacío de TT-87: «Crear proyecto» en lugar del enlace «Ir a
+  Proyectos» ([contrato de P1](../slices/fase2-p1-proyectos.md)).
 
 ### Slice 7 — perfil
 
@@ -2177,6 +2230,11 @@ la [ronda 2](../slices/correcciones-fase1-slice12-ronda2.md) y las
   en bloque (deuda del 6); continuar, duplicar y descartar en masa, que
   Clockify no documenta; y marcar en la lista las entradas rechazadas (deuda
   del 6).
+  _Corregido el 2026-10-21, P1_: TT-09 entró con P1: el selector de la edición
+  masiva ofrece «Crear proyecto» con `project.create`, y el proyecto creado
+  queda en el borrador del diálogo
+  ([contrato de P1](../slices/fase2-p1-proyectos.md)). Crear una etiqueta
+  (TT-13) sigue afuera.
 
 ### Lo que queda
 
@@ -2210,6 +2268,10 @@ _Corregido el 2026-10-07, slice 12_: decía «La edición masiva de proyecto,
 tarea, etiquetas y facturable (el resto de TT-63), que trae el 12.». Sale de
 esta lista, que ahora tiene su sección, y no queda nada salvo lo fuera de
 alcance.
+_Corregido el 2026-10-21, P1_: TT-09 no se construyó en la fase 1, pero ya no
+queda fuera: entró con P1, en la fase 2
+([contrato de P1](../slices/fase2-p1-proyectos.md)). De crear desde el
+selector, queda fuera solo la etiqueta (TT-13).
 
 ## Pendientes de definición del equipo
 

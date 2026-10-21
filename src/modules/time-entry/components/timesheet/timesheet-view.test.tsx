@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
-import type { TrackingCatalog } from "@/modules/project/schema";
+import type { ProjectActions, TrackingCatalog } from "@/modules/project/schema";
 import type {
   TimeEntryView,
   TimesheetDayView,
@@ -34,8 +34,13 @@ const web = {
 } as const;
 const design = { id: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", name: "Diseño" };
 
+/** D-P1-13: el doble de la action del alta; el marcado inicial no la llama. */
+const createProject: ProjectActions["createProject"] = () =>
+  Promise.resolve({ ok: false, code: "unexpected", message: "doble" });
+
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  clients: [],
   canCreateTag: true,
   tags: [],
   groups: [
@@ -143,7 +148,7 @@ function render(
 ): string {
   return renderToStaticMarkup(
     <DisplayFormatsProvider formats={{ time: "24h", date: "dd/MM/yyyy", duration }}>
-      <TrackingCatalogProvider catalog={catalog}>
+      <TrackingCatalogProvider catalog={catalog} createProject={createProject}>
         <TimesheetView state={{ ...state, ...overrides }} />
       </TrackingCatalogProvider>
     </DisplayFormatsProvider>,

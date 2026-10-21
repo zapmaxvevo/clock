@@ -41,6 +41,7 @@ const none: ProjectSelection = { project: null, task: null };
 /** «Web» arranca facturable y «App» no (PR-21). */
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  clients: [],
   canCreateTag: true,
   tags: [urgent, review],
   groups: [

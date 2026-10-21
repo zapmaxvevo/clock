@@ -142,6 +142,14 @@ uno nuevo ahí mismo. Acá el camino de creación de la fase 1 es uno solo y
 separado por entidad. Justificación: es el mismo criterio con el que TT-09 dejó
 fuera «crear proyecto desde el selector»; el atajo se agrega después sin tocar
 el modelo.
+_Corregido el 2026-10-21, P1_: la justificación remitía a TT-09, que entró con
+P1 (D-P1-10 del [contrato de P1](../slices/fase2-p1-proyectos.md)) y ya no sirve
+de precedente. La justificación que queda es la de un solo camino de alta por
+entidad en la fase 1. **El atajo de crear el cliente desde el diálogo de
+proyecto sigue fuera hasta P3**, que lo trae
+([mapa de la fase 2](../slices/fase2-mapa.md)). Hasta entonces, los diálogos de
+proyecto de P1 —el alta, la edición (PR-12) y el de TT-09— eligen entre «Sin
+cliente» y los clientes activos.
 
 **PR-05 Archivar un cliente** — `replicar`
 Documentado: «Only owners and admins of the workspace can archive clients.» El
@@ -197,6 +205,22 @@ defecto, miembros y responsables. Justificación: tarifa, estimación, plantilla
 estado de progreso son de plan pago y no se relevan (P-32); la nota entra por la
 misma decisión que la del cliente (P-31) y el facturable por P-16, como diseño
 propio.
+_Corregido el 2026-10-21, P1_: desde P1 los campos se editan. En `/proyectos`,
+la fila de un proyecto activo ofrece «Editar», con el nombre accesible «Editar
+«{nombre}»», a quien tiene `project.update` (PR-55, PR-56). Abre el diálogo
+«Editar proyecto», con el nombre del proyecto como descripción y el nombre, el
+cliente, el color, la nota y el facturable por defecto con los valores
+guardados. El color está siempre elegido; el cliente ofrece «Sin cliente», los
+activos y, si el proyecto tiene uno archivado, ese mismo con «(archivado)», que
+se conserva mientras no se cambie (PR-98). «Guardar» manda solo lo que cambió, y
+sin cambios cierra sin mandar. Con éxito, el diálogo se cierra y la pantalla
+anuncia «Proyecto «{nombre}» guardado»; con falla, queda abierto con lo escrito
+y «No se pudieron guardar los cambios.», con la causa. **Un proyecto archivado
+no se edita hasta restaurarlo**: su fila no ofrece «Editar», y el pedido que
+llegue igual responde PR-72 (decisión del usuario del 2026-10-21). Los miembros
+y los responsables no están en el diálogo: llegan con P6. Diseño propio, fijado
+en D-P1-3, D-P1-4, D-P1-8 y D-P1-9 del
+[contrato de P1](../slices/fase2-p1-proyectos.md).
 
 **PR-13 El nombre del proyecto es obligatorio** — `replicar`
 Es el único campo requerido al crear.
@@ -303,6 +327,14 @@ Diseño propio, fijado en el
   por defecto**; «Sin proyecto» y cambiar solo la tarea lo conservan. Decisión
   del equipo del 2026-10-05; el detalle está en TT-14.
 
+_Corregido el 2026-10-21, P1_: desde P1 el facturable por defecto se edita en
+un proyecto ya creado, con la misma casilla del alta, en el diálogo «Editar
+proyecto» de la fila (PR-12), y solo en un proyecto activo. **Cambiarlo no toca
+ninguna entrada** (TT-14): solo decide con qué valor arrancan las entradas
+nuevas y las que cambian de proyecto después. La lista no lo muestra: viaja al
+navegador solo para quien puede editar el proyecto. Fijado en D-P1-4, D-P1-6 y
+D-P1-9 del [contrato de P1](../slices/fase2-p1-proyectos.md).
+
 ### 2.3 Ciclo de vida
 
 **PR-22 Archivar un proyecto** — `replicar`
@@ -363,6 +395,11 @@ sin formato, por la misma decisión que la nota del cliente (P-31).
 Justificación: el formato arrastra un editor y una sanitización; el campo
 resuelve lo que la nota resuelve —dejar anotado el contexto del proyecto— sin
 ninguna de las dos cosas.
+_Corregido el 2026-10-21, P1_: desde P1 la nota se edita en el diálogo «Editar
+proyecto» de la fila (PR-12), sin formato, recortada y hasta 3000 caracteres
+(PR-54), y solo en un proyecto activo. La lista no la muestra: viaja al
+navegador solo para quien puede editar el proyecto (D-P1-6 del
+[contrato de P1](../slices/fase2-p1-proyectos.md)).
 
 ### 2.4 La pantalla de proyectos
 
@@ -376,6 +413,32 @@ alfabético. Justificación: las columnas exactas de Clockify no están en la
 documentación pública, así que la composición de la tabla es nuestra.
 _No verificado_: columnas, orden por defecto y filtros adicionales (por cliente,
 por acceso).
+
+_Corregido el 2026-10-21, P1_: decía «cantidad de tareas y tiempo imputado»
+entre las columnas, y no decía si el buscador miraba las tareas. Lo construido,
+fijado en D-P1-6 y D-P1-7 del [contrato de P1](../slices/fase2-p1-proyectos.md):
+
+- **Las columnas**, en este orden: «Nombre», con el punto de color y, con
+  «Todos», «Archivado» al lado del nombre de un archivado; «Cliente», con «Sin
+  cliente» si no tiene; «Acceso», «Público» o «Privado» (todos públicos hasta
+  P6); «Tareas»; y la de acciones, con «Editar» (PR-12) y «Nueva tarea», cuyo
+  encabezado, «Acciones», es solo para el lector de pantalla.
+- **Sin tiempo imputado**: decisión del usuario del 2026-10-21.
+- **Las tareas por nombre, no la cantidad**: la celda lista los nombres de las
+  tareas activas en orden alfabético, como la pantalla ya los mostraba debajo
+  de cada proyecto. Los nombres dicen la cantidad y no esconden lo que se veía.
+  Sin tareas, la celda queda vacía.
+- **El buscador** encuentra por nombre de proyecto y de cliente, sin distinguir
+  mayúsculas ni acentos, y **no por nombre de tarea**: el selector de TT-07 sí
+  busca por tarea, porque ahí se elige una; acá se busca un proyecto (decisión
+  del coordinador). Filtra en el navegador, sobre la lista entera, como el
+  selector (PR-110).
+- **El filtro de estado**: «Activos», por omisión, «Archivados» y «Todos». La
+  lista trae los activos y los archivados que la persona ve (PR-61).
+- **El orden** es alfabético y plano, sin grupos por cliente: el cliente es una
+  columna.
+- **Un archivado no ofrece acciones**: ni «Editar» ni «Nueva tarea». Las suyas
+  llegan con P2.
 
 **PR-32 Edición masiva de proyectos** — `fuera de alcance`
 Justificación: la documentación la marca como paga; no se puede relevar (P-32).
@@ -604,6 +667,10 @@ sobre este módulo no se mapea limpio. Lo relevado y lo decidido:
 Control total sobre proyectos, clientes, tareas y etiquetas: crear, editar,
 archivar, restaurar y borrar. Archivar y borrar clientes es solo de ellos
 (PR-05, PR-08); editar y borrar etiquetas también (PR-44).
+_Corregido el 2026-10-21, P1_: editar un proyecto es la acción `project.update`
+de `can()`, sobre el recurso del proyecto: owner y admin la tienen en cualquier
+proyecto que ven (D-P1-2 del [contrato de P1](../slices/fase2-p1-proyectos.md)).
+Archivar, restaurar y borrar llegan con P2.
 
 **PR-56 Responsable de proyecto** — `replicar`
 Documentado: ve todo el tiempo imputado a sus proyectos y puede editar el
@@ -613,6 +680,12 @@ responsable, no todos, y eso se resuelve con la marca de PR-19: `can()` decide
 con la membresía de proyecto que viaja en el recurso. El rol de workspace
 `project_manager` no alcanza por sí solo para tocar un proyecto del que no se es
 responsable.
+_Corregido el 2026-10-21, P1_: editar el proyecto es `project.update`, que el
+responsable tiene por la marca de `project_member` que viaja en el recurso
+(PR-19). `project_manager` y `team_manager` sin la marca deciden como `member` y
+reciben PR-84 (D-P1-2 del [contrato de P1](../slices/fase2-p1-proyectos.md)). El
+archivado no entra en `can()`: lo decide el service, y un proyecto archivado
+responde PR-72 (D-P1-4).
 
 **PR-57 Team manager** — `replicar`
 No tiene ninguna atribución sobre este módulo: su alcance son las personas y sus
@@ -784,6 +857,13 @@ el botón de crear, que con PR-59 ve cualquier membresía activa. Justificación
 copia propia.
 _Corregido el 2026-10-04_: decía «si el rol lo permite, un enlace a la pantalla
 de proyectos»; se alinea con TT-87.
+_Corregido el 2026-10-21, P1_: el selector vacío ya no ofrece «Ir a
+Proyectos». Sigue diciendo «No hay proyectos todavía», y su lista trae «Sin
+proyecto» y, con `project.create`, «Crear proyecto» (TT-09, TT-87), que crea el
+proyecto ahí mismo y lo deja elegido (decisión del usuario del 2026-10-21,
+D-P1-10 del [contrato de P1](../slices/fase2-p1-proyectos.md)). La pantalla de
+proyectos vacía no cambia: «Todavía no hay proyectos» y «Nuevo proyecto» en la
+cabecera.
 
 **PR-86 Workspace sin clientes** — `adaptar`
 El campo de cliente del diálogo de proyecto queda vacío y sigue siendo opcional
@@ -808,6 +888,15 @@ Con el filtro en activos y todo archivado, la lista muestra «No hay proyectos
 activos» y sugiere cambiar el filtro, en vez del vacío inicial de PR-85.
 Justificación: distinguir «no hay nada» de «no hay nada acá» evita que alguien
 cree de nuevo lo que ya existe archivado.
+_Corregido el 2026-10-21, P1_: los textos construidos, de D-P1-6 del
+[contrato de P1](../slices/fase2-p1-proyectos.md). Con «Activos» y todo
+archivado, «No hay proyectos activos», con la sugerencia «Elegí «Archivados» o
+«Todos» en el estado para verlos.». Con «Archivados» y ninguno, «No hay
+proyectos archivados». Con una búsqueda sin coincidencias, «Ningún proyecto
+coincide con la búsqueda.», la misma redacción que el selector (TT-07). Sin
+ningún proyecto visible gana el vacío de PR-85, «Todavía no hay proyectos», y
+con búsqueda, el de la búsqueda gana al del filtro. Con «Todos» y algún
+proyecto no hay vacío.
 
 ## 11. Estados de error
 
@@ -841,6 +930,21 @@ Vuelven a su valor por defecto —activos, buscador vacío— salvo que viajen e
 URL. Propuesta: que viajen en la URL, para que el estado de la lista se pueda
 compartir y el botón de volver funcione. Justificación: Clockify no lo
 documenta; en un Server Component el filtro en la URL es además lo más barato.
+_Corregido el 2026-10-21, P1_: construido como se proponía, con el detalle de
+D-P1-6 del [contrato de P1](../slices/fase2-p1-proyectos.md) y el
+[ADR 0008](../adr/0008-la-ventana-de-la-lista-vive-en-la-url.md):
+
+- **`estado`** (`activos`, `archivados`, `todos`): elegir un filtro navega y
+  suma una entrada al historial, así que volver atrás lo deshace. Con
+  «Activos», el parámetro no va en la URL.
+- **`buscar`**: escribir reemplaza la URL sin pedir nada al servidor y sin
+  sumar una entrada al historial por tecla.
+- **Al recargar**, se conservan los dos.
+- **Al volver atrás o adelante**, el campo de búsqueda toma el `buscar` de esa
+  entrada del historial, y la tabla queda filtrada con él.
+- **Cada parámetro inválido se ignora por separado**: un `estado` desconocido o
+  repetido es «Activos»; un `buscar` repetido o de más de 100 caracteres es
+  vacío. Uno no arrastra al otro.
 
 ## 13. Casos borde
 
@@ -952,6 +1056,16 @@ PR-112, nuevo, y el total pasa de 111 a 112.
 _Agregado el 2026-10-07, slice 11b_: los 13 del slice 11 están entregados,
 PR-21 con el 11a y los otros doce con el 11b, que verificó además la parte de
 etiquetas de PR-53, PR-54, PR-58 y PR-62.
+_Corregido el 2026-10-21, P1_: de los 24 de la fase 2, P1 entrega PR-31, PR-89
+y PR-95, y PR-55 y PR-56 en lo que es editar un proyecto
+([contrato de P1](../slices/fase2-p1-proyectos.md)). PR-55 y PR-56 siguen
+abiertos para archivar, restaurar y borrar (P2) y para el acceso (P6); los
+demás, con su slice del [mapa de la fase 2](../slices/fase2-mapa.md). P1 cumple
+además, en la edición, identificadores que tienen otro destino: PR-12, PR-15,
+PR-21 y PR-30, y los que valen para toda acción nueva (PR-57, PR-60, PR-61,
+PR-72, PR-75 … PR-77, PR-83, PR-84, PR-90, PR-91 y PR-93); verifica en e2e
+PR-101 … PR-103, y cambia el vacío del selector de PR-85 con TT-09. Los
+destinos de esta lista no cambian.
 
 ### 14.2 Qué cambió el 2026-10-03
 

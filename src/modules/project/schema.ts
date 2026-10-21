@@ -78,6 +78,32 @@ export const createTagInput = z.object({
   name,
 });
 
+/**
+ * D-P1-3, D-P1-4: un parche sobre un proyecto. Lo que no viaja no cambia. Los
+ * mismos campos y mensajes que el alta, salvo el color, que no admite `null`.
+ */
+export const updateProjectInput = z.object({
+  id: z.uuid(),
+  name: name.optional(),
+  clientId: z.uuid().nullable().optional(),
+  color: z.enum(PALETTE_KEYS).optional(),
+  note: longText(projectMessages.noteTooLong).optional(),
+  billableByDefault: z.boolean().optional(),
+});
+
+/** D-P1-6: los tres valores del filtro de estado, en el orden del selector. */
+export const PROJECT_FILTERS = ["activos", "archivados", "todos"] as const;
+export type ProjectFilter = (typeof PROJECT_FILTERS)[number];
+
+/**
+ * D-P1-6, ADR 0008: cada parámetro inválido se ignora por separado. Un
+ * `estado` desconocido no se lleva la búsqueda.
+ */
+export const projectsSearchParams = z.object({
+  estado: z.enum(PROJECT_FILTERS).optional().catch(undefined),
+  buscar: z.string().max(NAME_MAX).optional().catch(undefined),
+});
+
 export type CreateClientInput = z.input<typeof createClientInput>;
 /** Lo que recibe el service: los textos ya recortados y con su default. */
 export type CreateClientValues = z.output<typeof createClientInput>;
@@ -87,43 +113,16 @@ export type CreateTaskInput = z.input<typeof createTaskInput>;
 export type CreateTaskValues = z.output<typeof createTaskInput>;
 export type CreateTagInput = z.input<typeof createTagInput>;
 export type CreateTagValues = z.output<typeof createTagInput>;
+export type UpdateProjectInput = z.input<typeof updateProjectInput>;
+export type UpdateProjectValues = z.output<typeof updateProjectInput>;
 
 export type ClientView = { readonly id: string; readonly name: string };
 
 /** Sin estado: la lectura solo devuelve tareas activas. */
 export type TaskView = { readonly id: string; readonly name: string };
 
-export type ProjectView = {
-  readonly id: string;
-  readonly name: string;
-  readonly color: PaletteKey;
-  readonly isPublic: boolean;
-  readonly canCreateTask: boolean;
-  /** Tareas activas, en orden alfabético. */
-  readonly tasks: readonly TaskView[];
-};
-
-export type ProjectGroupView = {
-  /** `null` es el grupo «Sin cliente». */
-  readonly client: ClientView | null;
-  readonly projects: readonly ProjectView[];
-};
-
 /** Lo que se muestra y se elige de una etiqueta (PR-43). */
 export type TagRef = { readonly id: string; readonly name: string };
-
-export type ProjectCatalog = {
-  readonly canCreateClient: boolean;
-  readonly canCreateProject: boolean;
-  /** PR-112: «Nueva etiqueta». */
-  readonly canCreateTag: boolean;
-  /** Las activas, en orden alfabético; vacío sin `tag.view` (PR-62, PR-60). */
-  readonly tags: readonly TagRef[];
-  /** Clientes activos del workspace, para el diálogo de proyecto. Orden alfabético. */
-  readonly clients: readonly ClientView[];
-  /** Proyectos que quien pide puede ver, agrupados por cliente. «Sin cliente» al final. */
-  readonly groups: readonly ProjectGroupView[];
-};
 
 /** Lo que una entrada muestra de su proyecto. */
 export type ProjectRef = {
@@ -133,6 +132,48 @@ export type ProjectRef = {
 };
 
 export type TaskRef = { readonly id: string; readonly name: string };
+
+/** Lo que la edición escribe de un proyecto, tal como quedó. */
+export type ProjectSettings = {
+  readonly id: string;
+  readonly name: string;
+  readonly clientId: string | null;
+  readonly color: PaletteKey;
+  readonly note: string;
+  readonly billableByDefault: boolean;
+};
+
+/** Una fila de la lista (PR-31, D-P1-7): lo que la tabla muestra. */
+export type ProjectListItem = ProjectRef & {
+  /** `null` es «Sin cliente». */
+  readonly client: (ClientView & { readonly archived: boolean }) | null;
+  readonly isPublic: boolean;
+  readonly archived: boolean;
+  /** Activas, en orden alfabético (PR-38). */
+  readonly tasks: readonly TaskView[];
+  /** `project.update` y no archivado (D-P1-2, D-P1-4). */
+  readonly canUpdate: boolean;
+  /** `task.create` y no archivado. */
+  readonly canCreateTask: boolean;
+  /**
+   * D-P1-6: lo que el diálogo de edición arranca, con la nota y el facturable
+   * por defecto. Solo con `canUpdate`; sin él, `null`.
+   */
+  readonly settings: ProjectSettings | null;
+};
+
+/** `/proyectos` (PR-31, D-P1-6). */
+export type ProjectListView = {
+  readonly canCreateClient: boolean;
+  readonly canCreateProject: boolean;
+  readonly canCreateTag: boolean;
+  /** PR-112, hasta P5: las activas, en orden alfabético; vacío sin `tag.view`. */
+  readonly tags: readonly TagRef[];
+  /** Los clientes activos, para el alta y la edición. Orden alfabético. */
+  readonly clients: readonly ClientView[];
+  /** Los que `project.view` deja ver, activos y archivados, por `compareNames`. */
+  readonly projects: readonly ProjectListItem[];
+};
 
 /** Un cliente en el filtro de un reporte, con su marca de archivado (RP-29). */
 export type FilterClientView = ClientView & { readonly archived: boolean };
@@ -173,8 +214,10 @@ export type TrackingGroupView = {
 
 /** El catálogo del selector de proyecto del rastreador. */
 export type TrackingCatalog = {
-  /** TT-87: el enlace a `/proyectos` del selector vacío. */
+  /** TT-09: la opción «Crear proyecto» del selector. */
   readonly canCreateProject: boolean;
+  /** D-P1-12: los activos, en orden alfabético, para TT-09; vacío sin `project.create`. */
+  readonly clients: readonly ClientView[];
   /** TT-88: el enlace a `/proyectos` del selector de etiquetas vacío. */
   readonly canCreateTag: boolean;
   /** Las activas, en orden alfabético; vacío sin `tag.view` (PR-62, PR-60). */
@@ -185,14 +228,16 @@ export type TrackingCatalog = {
 
 export type CreateClientResult = { readonly client: ClientView };
 
-/** Un proyecto recién creado, o el de un reintento, llega con `tasks` vacío. */
-export type CreateProjectResult = { readonly project: ProjectView };
+/** D-P1-12: lo que el selector necesita para elegir el proyecto creado. */
+export type CreateProjectResult = { readonly project: ProjectRef };
+
+export type UpdateProjectResult = { readonly project: ProjectSettings };
 
 export type CreateTaskResult = { readonly task: TaskView };
 
 export type CreateTagResult = { readonly tag: TagRef };
 
-/** Las cuatro actions, como las recibe la pantalla por props desde `page.tsx`. */
+/** Las actions, como las recibe la pantalla por props desde `page.tsx`. */
 export type ProjectActions = {
   readonly createClient: (
     input: CreateClientInput,
@@ -204,4 +249,7 @@ export type ProjectActions = {
     input: CreateTaskInput,
   ) => Promise<ActionResult<CreateTaskResult>>;
   readonly createTag: (input: CreateTagInput) => Promise<ActionResult<CreateTagResult>>;
+  readonly updateProject: (
+    input: UpdateProjectInput,
+  ) => Promise<ActionResult<UpdateProjectResult>>;
 };

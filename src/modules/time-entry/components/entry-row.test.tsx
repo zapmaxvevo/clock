@@ -3,14 +3,24 @@ import { describe, expect, it } from "vitest";
 
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
-import type { ProjectSelection, TagRef, TrackingCatalog } from "@/modules/project/schema";
+import type {
+  ProjectActions,
+  ProjectSelection,
+  TagRef,
+  TrackingCatalog,
+} from "@/modules/project/schema";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import type { DisplayFormats } from "@/server/time";
 
 import { EntryRow } from "./entry-row";
 
+/** D-P1-13: el doble de la action del alta; el marcado inicial no la llama. */
+const createProject: ProjectActions["createProject"] = () =>
+  Promise.resolve({ ok: false, code: "unexpected", message: "doble" });
+
 const catalog: TrackingCatalog = {
   canCreateProject: false,
+  clients: [],
   canCreateTag: false,
   groups: [],
   tags: [],
@@ -59,7 +69,7 @@ function render(options: Options = {}): string {
         options.formats ?? { time: "24h", date: "dd/MM/yyyy", duration: "compact" }
       }
     >
-      <TrackingCatalogProvider catalog={catalog}>
+      <TrackingCatalogProvider catalog={catalog} createProject={createProject}>
         <EntryRow
           entry={entry}
           description={options.description ?? entry.description}

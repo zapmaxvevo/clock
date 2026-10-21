@@ -159,3 +159,29 @@ export async function holdRefreshes(
   });
   return release;
 }
+
+/**
+ * Los pedidos de la página a las URLs de `matches` mientras corre `act`, de
+ * cualquier tipo: navegaciones, revalidaciones y server actions. Sirve para
+ * afirmar que algo no habla con el servidor, como escribir en el buscador de
+ * `/proyectos` (D-P1-6). Al terminar deja de escuchar.
+ */
+export async function requestsDuring(
+  page: Page,
+  matches: UrlPredicate,
+  act: () => Promise<void>,
+): Promise<readonly Request[]> {
+  const sent: Request[] = [];
+  const listener = (request: Request): void => {
+    if (matches(new URL(request.url()))) {
+      sent.push(request);
+    }
+  };
+  page.on("request", listener);
+  try {
+    await act();
+  } finally {
+    page.off("request", listener);
+  }
+  return sent;
+}

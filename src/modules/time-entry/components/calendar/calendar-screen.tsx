@@ -1,5 +1,6 @@
 import { InactiveMembershipNotice } from "@/components/inactive-membership-notice";
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
+import { createProject } from "@/modules/project/actions";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
 import { getTrackingCatalog } from "@/modules/project/service";
 import {
@@ -48,7 +49,7 @@ export async function CalendarScreen({
       {/* Los formatos de esta misma lectura, no los del layout: una navegación
           del cliente puede conservar el layout con los formatos de antes. */}
       <DisplayFormatsProvider formats={workspace.formats}>
-        <TrackingCatalogProvider catalog={catalog}>
+        <TrackingCatalogProvider catalog={catalog} createProject={createProject}>
           <CalendarView state={state} initialZoom={initialZoom} />
         </TrackingCatalogProvider>
       </DisplayFormatsProvider>

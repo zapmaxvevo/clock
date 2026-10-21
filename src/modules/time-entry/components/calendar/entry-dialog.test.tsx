@@ -6,7 +6,7 @@ import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { Dialog } from "@/components/ui/dialog";
 import type * as DropdownMenuModule from "@/components/ui/dropdown-menu";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
-import type { TrackingCatalog } from "@/modules/project/schema";
+import type { ProjectActions, TrackingCatalog } from "@/modules/project/schema";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import type { DisplayFormats } from "@/server/time";
 
@@ -29,8 +29,13 @@ vi.mock("@/components/ui/dropdown-menu", async (importOriginal) => {
   };
 });
 
+/** D-P1-13: el doble de la action del alta; el marcado inicial no la llama. */
+const createProject: ProjectActions["createProject"] = () =>
+  Promise.resolve({ ok: false, code: "unexpected", message: "doble" });
+
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  clients: [],
   canCreateTag: true,
   tags: [],
   groups: [
@@ -112,7 +117,7 @@ function render(
 ): string {
   return renderToStaticMarkup(
     <DisplayFormatsProvider formats={formats}>
-      <TrackingCatalogProvider catalog={catalog}>
+      <TrackingCatalogProvider catalog={catalog} createProject={createProject}>
         <EntryDialogBody entry={entry} serverNow={serverNow} todayKey="2026-10-04" />
       </TrackingCatalogProvider>
     </DisplayFormatsProvider>,
@@ -218,7 +223,7 @@ function renderContent(
 ): string {
   return renderToStaticMarkup(
     <DisplayFormatsProvider formats={formats}>
-      <TrackingCatalogProvider catalog={catalog}>
+      <TrackingCatalogProvider catalog={catalog} createProject={createProject}>
         <Dialog open>
           <EntryDialogContent
             subject={subject}

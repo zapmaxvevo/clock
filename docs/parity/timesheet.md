@@ -1393,16 +1393,22 @@ _Corregido el 2026-10-07, P-12_: ofrecía también «Copiar semana anterior», y
 botón de fila era «Agregar fila».
 
 **TS-88 Workspace sin proyectos** — `adaptar`
-El selector de la fila abre con «No hay proyectos todavía» y el enlace a la
-pantalla de proyectos, igual que TT-87 y PR-85, con la misma justificación. Con
-TS-20, la fila «Sin proyecto» se puede agregar igual, salvo que ya sea fila en
-la semana: entonces el selector no la ofrece (TS-18) y el vacío sigue siendo
-este. **Sin ningún proyecto para ofrecer, gana este vacío**: «Todas las
-combinaciones ya tienen fila esta semana.» (TS-18) es solo para cuando hay
-proyectos para ofrecer y todo está excluido. Decisión del team-lead del
-2026-10-08, con la ronda 2 de la revisión del contrato.
+El selector de la fila abre con «No hay proyectos todavía» y, con
+`project.create`, la opción «Crear proyecto» (TT-09), igual que TT-87 y PR-85,
+con la misma justificación. Con TS-20, la fila «Sin proyecto» se puede agregar
+igual, salvo que ya sea fila en la semana: entonces el selector no la ofrece
+(TS-18) y el vacío sigue siendo este. **Sin ningún proyecto para ofrecer, gana
+este vacío**: «Todas las combinaciones ya tienen fila esta semana.» (TS-18) es
+solo para cuando hay proyectos para ofrecer y todo está excluido. Decisión del
+team-lead del 2026-10-08, con la ronda 2 de la revisión del contrato.
 _Corregido el 2026-10-08, slice 13_: decía que la fila «Sin proyecto» se podía
 agregar igual, sin exceptuar que ya fuera fila, y no decía qué vacío gana.
+_Corregido el 2026-10-21, P1_: decía «y el enlace a la pantalla de proyectos».
+Con TT-09, que entró con P1, «Crear proyecto» reemplaza al enlace «Ir a
+Proyectos», igual que en TT-87 (decisión del usuario del 2026-10-21, D-P1-10
+del [contrato de P1](../slices/fase2-p1-proyectos.md)). La opción va siempre al
+final de la lista, también con todo excluido (TS-18), porque un proyecto nuevo
+nunca está excluido; crearlo desde la fila nueva le deja el par.
 
 **TS-89 Primera semana de uso** — `fuera de alcance`
 Era la consecuencia de TS-57 sobre la primera semana: sin semana anterior con

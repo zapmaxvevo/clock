@@ -9,7 +9,7 @@ import { retryHandlerOf, useAction } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
 import { projectMessages, type ProjectActions } from "@/modules/project/schema";
 
-import { CreateDialog } from "./create-dialog";
+import { FormDialog } from "./form-dialog";
 import { clientCreatedLabel, projectLabels } from "./labels";
 import { useProjectNotices } from "./project-notices";
 
@@ -61,7 +61,7 @@ export function NewClientDialog({ createClient }: NewClientDialogProps) {
 
   return (
     <>
-      <CreateDialog
+      <FormDialog
         noticeKey={NEW_ID_KEY}
         title={projectLabels.newClient}
         triggerVariant="outline"
@@ -100,7 +100,7 @@ export function NewClientDialog({ createClient }: NewClientDialogProps) {
             onChange={(event) => setDraft({ ...draft, note: event.target.value })}
           />
         </div>
-      </CreateDialog>
+      </FormDialog>
       {/*
         PR-62: un cliente sin proyectos no aparece en la lista; el alta se
         confirma acá, fuera del diálogo, para que sobreviva a su cierre. Va en

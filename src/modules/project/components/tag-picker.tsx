@@ -196,7 +196,7 @@ export function TagPicker({
           la lista; el relleno lo pone el mensaje.
         */}
         <ComboboxEmpty className="flex py-0">
-          {view.empty !== null && <EmptyMessage empty={view.empty} />}
+          {view.empty !== null && <TagPickerEmptyMessage empty={view.empty} />}
         </ComboboxEmpty>
         <ComboboxList>
           {view.options.map((option) => (
@@ -236,7 +236,7 @@ function OptionCheckbox() {
   );
 }
 
-function EmptyMessage({ empty }: { readonly empty: TagPickerEmpty }) {
+export function TagPickerEmptyMessage({ empty }: { readonly empty: TagPickerEmpty }) {
   if (empty.kind === "noMatches") {
     return <p className="py-2">{projectLabels.tagPickerNoMatches}</p>;
   }

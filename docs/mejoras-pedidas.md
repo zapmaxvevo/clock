@@ -18,6 +18,13 @@ se arrancan solos: cuando el usuario elija uno, pasa por el pipeline de siempre
    TT-09 de `docs/parity/time-tracker.md`, hoy `fuera de alcance`; Clockify lo
    ofrece al final del buscador cuando el permiso lo habilita. **Sumada a P1 de
    la fase 2** por decisión del usuario del 2026-10-16 (`fase2-mapa.md`).
+   _Corregido el 2026-10-21, P1_: **hecha con P1**
+   ([contrato de P1](slices/fase2-p1-proyectos.md), D-P1-10 y D-P1-11). TT-09
+   pasó a `adaptar`: «Crear proyecto» es la última opción de la lista del
+   selector, para quien tiene `project.create`, en el rastreador, el
+   calendario, la planilla y la edición masiva; abre el alta en un diálogo con
+   el nombre de la búsqueda y deja elegido el proyecto nuevo. En el selector
+   vacío reemplaza a «Ir a Proyectos» (TT-87, TS-88).
 3. **Un servidor MCP para cargar horas.** Que un asistente (Claude u otro
    cliente MCP) pueda cargar, ver y editar entradas en Clock con la cuenta de
    quien lo usa. Pide decidir la autenticación (tokens personales o OAuth), qué

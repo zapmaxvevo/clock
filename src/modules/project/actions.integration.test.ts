@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { eq } from "drizzle-orm";
+
 import { db } from "@/server/db";
-import { client, membership, project, tag } from "@/server/db/schema";
+import { client, membership, project, projectMember, tag } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
 import {
   seedClient,
@@ -14,8 +16,13 @@ import {
   type SeededWorkspace,
 } from "@/test/factories";
 
+import { auditFor } from "@/test/queries";
+
 import { projectRepository } from "./repository";
-import { projectMessages } from "./schema";
+import { projectMessages, updateProjectInput } from "./schema";
+
+/** D-P1-5: el alta y la edición de un proyecto revalidan el árbol entero. */
+const tree = { path: "/", type: "layout" } as const;
 
 /**
  * La capa de actions con sus tres puertas de Next y de Better Auth
@@ -158,25 +165,13 @@ describe("createClient", () => {
 });
 
 describe("createProject", () => {
-  it("crea el proyecto y responde su vista", async () => {
+  it("crea el proyecto, responde su ProjectRef y revalida el árbol (D-P1-5, D-P1-12)", async () => {
     await signInAs("member");
     const id = randomUUID();
     expect(
       await actions.createProject({ id, name: "Web", clientId: null, color: "lime" }),
-    ).toEqual({
-      ok: true,
-      data: {
-        project: {
-          id,
-          name: "Web",
-          color: "lime",
-          isPublic: true,
-          canCreateTask: true,
-          tasks: [],
-        },
-      },
-    });
-    expect(mocks.revalidated).toEqual(["/proyectos"]);
+    ).toEqual({ ok: true, data: { project: { id, name: "Web", color: "lime" } } });
+    expect(mocks.revalidated).toEqual([tree]);
   });
 
   it("acepta el facturable por defecto y lo guarda (PR-21)", async () => {
@@ -226,7 +221,7 @@ describe("createProject", () => {
       code: "not_found",
       message: projectMessages.clientUnavailable,
     });
-    expect(mocks.revalidated).toEqual(["/proyectos"]);
+    expect(mocks.revalidated).toEqual([tree]);
   });
 
   it("traduce un color fuera de la paleta como validation", async () => {
@@ -253,7 +248,7 @@ describe("createProject", () => {
       }),
     ).toEqual({ ok: false, code: "forbidden", message: projectMessages.forbidden });
     expect(await db.select().from(project)).toEqual([]);
-    expect(mocks.revalidated).toEqual(["/proyectos"]);
+    expect(mocks.revalidated).toEqual([tree]);
   });
 });
 
@@ -423,5 +418,230 @@ describe("un error que no es de dominio", () => {
     expect(logged).toHaveBeenCalledWith(cause);
     logged.mockRestore();
     expect(mocks.revalidated).toEqual(["/proyectos"]);
+  });
+});
+
+describe("updateProject (§4.6, criterio 11 de P1)", () => {
+  /** Un proyecto de Acme con un responsable `member` que es quien tiene la sesión. */
+  async function seedManaged() {
+    const userId = await signInAs("member");
+    const acme = await seedClient({ workspaceId: seeded.workspaceId, name: "Acme" });
+    const web = await seedProject({
+      workspaceId: seeded.workspaceId,
+      clientId: acme.id,
+      name: "Web",
+      color: "teal",
+      members: [{ userId, isManager: true }],
+    });
+    return { userId, acme, web };
+  }
+
+  async function nameOf(id: string) {
+    const [row] = await db.select().from(project).where(eq(project.id, id));
+    return row.name;
+  }
+
+  async function updatesOf(id: string) {
+    return (await auditFor("project", id)).filter(
+      (row) => row.action === "project.update",
+    );
+  }
+
+  it("el responsable cambia el nombre, responde ProjectSettings y revalida el árbol", async () => {
+    const { acme, web } = await seedManaged();
+    expect(await actions.updateProject({ id: web.id, name: " App " })).toEqual({
+      ok: true,
+      data: {
+        project: {
+          id: web.id,
+          name: "App",
+          clientId: acme.id,
+          color: "teal",
+          note: "",
+          billableByDefault: false,
+        },
+      },
+    });
+    expect(await nameOf(web.id)).toBe("App");
+    expect(mocks.revalidated).toEqual([tree]);
+  });
+
+  it("nada difiere: responde ok sin dejar constancia", async () => {
+    const { web } = await seedManaged();
+    expect(await actions.updateProject({ id: web.id, name: "Web" })).toMatchObject({
+      ok: true,
+    });
+    expect(await updatesOf(web.id)).toEqual([]);
+    expect(mocks.revalidated).toEqual([tree]);
+  });
+
+  it("el reintento de una respuesta perdida, con lo mismo, deja una sola constancia", async () => {
+    const { web } = await seedManaged();
+    const input = { id: web.id, note: "Una vez" };
+    const first = await actions.updateProject(input);
+    const again = await actions.updateProject(input);
+    expect(again).toEqual(first);
+    expect(await updatesOf(web.id)).toHaveLength(1);
+  });
+
+  it.each([
+    ["el nombre vacío", { name: "   " }, projectMessages.nameRequired],
+    [
+      "el nombre de 101 caracteres",
+      { name: "a".repeat(101) },
+      projectMessages.nameTooLong,
+    ],
+    ["el carácter nulo", { name: "We\u0000b" }, projectMessages.nullCharacter],
+    [
+      "la nota de 3001 caracteres",
+      { note: "a".repeat(3001) },
+      projectMessages.noteTooLong,
+    ],
+  ] as const)(
+    "%s responde validation con su texto, sin escribir",
+    async (_, fields, message) => {
+      const { web } = await seedManaged();
+      expect(await actions.updateProject({ id: web.id, ...fields })).toEqual({
+        ok: false,
+        code: "validation",
+        message,
+      });
+      expect(await updatesOf(web.id)).toEqual([]);
+      expect(mocks.revalidated).toEqual([tree]);
+    },
+  );
+
+  it("un color fuera de la paleta o null responde validation con el primer problema del ZodError, sin escribir", async () => {
+    const { web } = await seedManaged();
+    for (const color of ["magenta", null]) {
+      const parsed = updateProjectInput.safeParse({ id: web.id, color });
+      const message = parsed.error?.issues.at(0)?.message;
+      expect(message).toEqual(expect.any(String));
+      expect(
+        // @ts-expect-error: un pedido armado a mano, con un color que no es clave.
+        await actions.updateProject({ id: web.id, color }),
+      ).toEqual({ ok: false, code: "validation", message });
+    }
+    expect(await updatesOf(web.id)).toEqual([]);
+  });
+
+  it("el nombre repetido para el cliente responde PR-77", async () => {
+    const { acme, web } = await seedManaged();
+    await seedProject({
+      workspaceId: seeded.workspaceId,
+      clientId: acme.id,
+      name: "App",
+    });
+    expect(await actions.updateProject({ id: web.id, name: "app" })).toEqual({
+      ok: false,
+      code: "validation",
+      message: projectMessages.projectNameTaken,
+    });
+    expect(await nameOf(web.id)).toBe("Web");
+    expect(mocks.revalidated).toEqual([tree]);
+  });
+
+  it("un proyecto inexistente, de otro workspace, privado ajeno o archivado responde PR-72", async () => {
+    await signInAs("member");
+    const other = await seedWorkspace();
+    const foreign = await seedProject({ workspaceId: other.workspaceId });
+    const vault = await seedProject({ workspaceId: seeded.workspaceId, isPublic: false });
+    const shelved = await seedProject({
+      workspaceId: seeded.workspaceId,
+      archived: true,
+    });
+    for (const id of [randomUUID(), foreign.id, vault.id, shelved.id]) {
+      expect(await actions.updateProject({ id, name: "Otro" })).toEqual({
+        ok: false,
+        code: "not_found",
+        message: projectMessages.projectUnavailable,
+      });
+    }
+    expect(await auditFor("project")).toEqual([]);
+    expect(mocks.revalidated).toEqual([tree, tree, tree, tree]);
+  });
+
+  it("un admin con la membresía inactiva responde PR-72 sin escribir", async () => {
+    const web = await seedProject({ workspaceId: seeded.workspaceId, name: "Web" });
+    await signInAs("admin", "inactive");
+    expect(await actions.updateProject({ id: web.id, name: "App" })).toEqual({
+      ok: false,
+      code: "not_found",
+      message: projectMessages.projectUnavailable,
+    });
+    expect(await nameOf(web.id)).toBe("Web");
+  });
+
+  it("un cliente archivado o de otro workspace responde PR-83", async () => {
+    const { web } = await seedManaged();
+    const gone = await seedClient({ workspaceId: seeded.workspaceId, archived: true });
+    const other = await seedWorkspace();
+    const foreign = await seedClient({ workspaceId: other.workspaceId });
+    for (const clientId of [gone.id, foreign.id]) {
+      expect(await actions.updateProject({ id: web.id, clientId })).toEqual({
+        ok: false,
+        code: "not_found",
+        message: projectMessages.clientUnavailable,
+      });
+    }
+    expect(await updatesOf(web.id)).toEqual([]);
+  });
+
+  it("un member que no es responsable recibe PR-84 y revalida", async () => {
+    const { web, userId } = await seedManaged();
+    await db
+      .update(projectMember)
+      .set({ isManager: false })
+      .where(eq(projectMember.userId, userId));
+    expect(await actions.updateProject({ id: web.id, name: "App" })).toEqual({
+      ok: false,
+      code: "forbidden",
+      message: projectMessages.forbidden,
+    });
+    expect(await nameOf(web.id)).toBe("Web");
+    expect(mocks.revalidated).toEqual([tree]);
+  });
+
+  it("un error cualquiera responde unexpected con el mensaje del módulo y revalida", async () => {
+    const { web } = await seedManaged();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const update = vi
+      .spyOn(projectRepository, "updateProject")
+      .mockRejectedValue(new Error("la base se cayó"));
+    try {
+      expect(await actions.updateProject({ id: web.id, name: "App" })).toEqual({
+        ok: false,
+        code: "unexpected",
+        message: projectMessages.unexpected,
+      });
+    } finally {
+      update.mockRestore();
+      logged.mockRestore();
+    }
+    expect(mocks.revalidated).toEqual([tree]);
+  });
+
+  it("sin sesión manda al login sin escribir ni revalidar", async () => {
+    const web = await seedProject({ workspaceId: seeded.workspaceId, name: "Web" });
+    await expect(
+      actions.updateProject({ id: web.id, name: "App" }),
+    ).rejects.toBeInstanceOf(RedirectError);
+    expect(mocks.redirects).toEqual(["/login"]);
+    expect(mocks.revalidated).toEqual([]);
+    expect(await nameOf(web.id)).toBe("Web");
+  });
+});
+
+describe("la revalidación de las otras tres altas no cambia (D-P1-5)", () => {
+  it("createClient, createTask y createTag revalidan solo /proyectos", async () => {
+    const userId = await signInAs("member");
+    const web = await seedProject({
+      workspaceId: seeded.workspaceId,
+      members: [{ userId, isManager: true }],
+    });
+    await actions.createClient({ id: randomUUID(), name: "Acme" });
+    await actions.createTask({ id: randomUUID(), projectId: web.id, name: "Diseño" });
+    await actions.createTag({ id: randomUUID(), name: "Urgente" });
+    expect(mocks.revalidated).toEqual(["/proyectos", "/proyectos", "/proyectos"]);
   });
 });

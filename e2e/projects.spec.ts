@@ -9,18 +9,34 @@ import {
   openSecondTab,
   withServerAction,
 } from "./network";
-import { nameField, openProjects, PROJECTS_PATH, saveButton } from "./projects-page";
+import {
+  columnCell,
+  dialogNotice,
+  expectProjectsTitle,
+  isProjectsPage,
+  nameField,
+  newTaskButton,
+  openProjects,
+  projectRow,
+  projectRows,
+  PROJECTS_PATH,
+  saveButton,
+  searchProjects,
+  taskList,
+} from "./projects-page";
 import { expect, signIn, TEST_EMAIL_DOMAIN, test } from "./session";
 import { uniqueSuffix } from "./tracker-page";
 
 /**
  * Recorridos del slice 9: la pantalla de proyectos, sus tres altas y el
  * reintento de «Nuevo proyecto» por el ADR 0007 (criterios 6, 7, 10 y 12).
+ * Desde P1 la lista es una tabla plana: cada proyecto es una fila, con su
+ * cliente en una columna, y se busca con `projectRow`.
  *
  * El workspace es uno solo para todos los specs, que corren en paralelo, y la
  * base persiste entre corridas sin que nadie pueda borrar lo creado. Por eso
  * todo nombre lleva un sufijo propio del recorrido, y las afirmaciones de
- * orden miran solo los grupos que el recorrido creó, nunca la lista entera.
+ * orden miran solo las filas que el recorrido creó, aisladas con el buscador.
  * El vacío de PR-85 no se prueba acá: existe una sola vez en la vida de la
  * base, y lo cubren la integración y el test del componente.
  */
@@ -42,10 +58,6 @@ const FORBIDDEN = "No tenés permiso para hacer esto.";
 /** El título del aviso de «Nueva tarea», que nombra la operación (TT-90). */
 const TASK_NOT_CREATED = "No se pudo crear la tarea.";
 
-function isProjectsPage(url: URL): boolean {
-  return url.pathname === PROJECTS_PATH;
-}
-
 function headerButton(page: Page, name: "Nuevo cliente" | "Nuevo proyecto"): Locator {
   return page.getByRole("button", { name, exact: true });
 }
@@ -58,31 +70,9 @@ function dialogNamed(
   return page.getByRole("dialog", { name });
 }
 
-/** El aviso de un diálogo, que es un `alert` arriba de «Guardar». */
-function dialogNotice(dialog: Locator, message: string): Locator {
-  return dialog.getByRole("alert").filter({ hasText: message });
-}
-
-/** Un grupo de la lista, por el nombre de su cliente o «Sin cliente». */
-function clientGroup(page: Page, name: string): Locator {
-  return page.getByRole("region", { name, exact: true });
-}
-
-/** Un proyecto dentro de un grupo, por su nombre. */
-function projectItem(scope: Locator, name: string): Locator {
-  return scope.getByRole("listitem").filter({
-    has: scope.page().getByRole("heading", { level: 3, name, exact: true }),
-  });
-}
-
-/** Todos los proyectos con ese nombre, en cualquier grupo. */
-function projectsNamed(page: Page, name: string): Locator {
-  return page.getByRole("heading", { level: 3, name, exact: true });
-}
-
 /**
  * El anuncio de un alta de cliente, en su región `aria-live`. Un cliente sin
- * proyectos no forma grupo (PR-62), así que es la única señal del éxito.
+ * proyectos no tiene fila (PR-62), así que es la única señal del éxito.
  */
 function clientCreatedStatus(page: Page, name: string): Locator {
   return page.getByRole("status").filter({ hasText: `Cliente «${name}» creado` });
@@ -136,28 +126,17 @@ async function fillProjectDialog(page: Page, fields: ProjectFields): Promise<Loc
   return dialog;
 }
 
+/** Crea el proyecto y espera su fila, con su cliente o «Sin cliente». */
 async function createProject(page: Page, fields: ProjectFields): Promise<void> {
   const dialog = await fillProjectDialog(page, fields);
   await saveAndClose(dialog, headerButton(page, "Nuevo proyecto"));
-  const group = clientGroup(page, fields.client ?? NO_CLIENT);
-  await expect(projectItem(group, fields.name)).toBeVisible();
-}
-
-/** «Nueva tarea» dice en su nombre accesible a qué proyecto suma la tarea. */
-function newTaskButton(scope: Locator, projectName: string): Locator {
-  return scope.getByRole("button", {
-    name: `Nueva tarea en «${projectName}»`,
-    exact: true,
-  });
-}
-
-/** Las tareas de un proyecto, en su lista nombrada por el proyecto. */
-function taskList(scope: Locator, projectName: string): Locator {
-  return scope.getByRole("list", { name: `Tareas de «${projectName}»`, exact: true });
+  const row = projectRow(page, fields.name);
+  await expect(row).toBeVisible();
+  await expect(columnCell(row, "Cliente")).toHaveText(fields.client ?? NO_CLIENT);
 }
 
 async function createTask(page: Page, projectName: string, name: string): Promise<void> {
-  const project = projectItem(clientGroup(page, NO_CLIENT), projectName);
+  const project = projectRow(page, projectName);
   const trigger = newTaskButton(project, projectName);
   await trigger.click();
   const dialog = dialogNamed(page, "Nueva tarea");
@@ -182,7 +161,7 @@ async function fillTaskDialog(
   projectName: string,
   name: string,
 ): Promise<Locator> {
-  const project = projectItem(clientGroup(page, NO_CLIENT), projectName);
+  const project = projectRow(page, projectName);
   await newTaskButton(project, projectName).click();
   const dialog = dialogNamed(page, "Nueva tarea");
   await nameField(dialog).fill(name);
@@ -222,10 +201,8 @@ async function expectAppliedElsewhere(
   name: string,
 ): Promise<void> {
   const otherPage = await openSecondTab(browser, email, PROJECTS_PATH);
-  await expect(
-    otherPage.getByRole("heading", { level: 1, name: "Proyectos" }),
-  ).toBeVisible();
-  await expect(projectItem(clientGroup(otherPage, NO_CLIENT), name)).toBeVisible();
+  await expectProjectsTitle(otherPage);
+  await expect(projectRow(otherPage, name)).toBeVisible();
   await otherPage.context().close();
 }
 
@@ -235,20 +212,23 @@ async function expectAppliedElsewhere(
  */
 async function expectSingleProject(page: Page, name: string): Promise<void> {
   await page.reload();
-  await expect(page.getByRole("heading", { level: 1, name: "Proyectos" })).toBeVisible();
-  await expect(projectItem(clientGroup(page, NO_CLIENT), name)).toBeVisible();
-  await expect(projectsNamed(page, name)).toHaveCount(1);
+  await expectProjectsTitle(page);
+  const row = projectRow(page, name);
+  await expect(row).toHaveCount(1);
+  await expect(columnCell(row, "Cliente")).toHaveText(NO_CLIENT);
 }
 
-test("la pantalla agrupa por cliente en orden alfabético con «Sin cliente» al final", async ({
+test("las altas de la cabecera dejan cada proyecto en su fila, con su cliente, en orden alfabético sin agrupar", async ({
   page,
 }) => {
   const suffix = uniqueSuffix();
   const clientA = `A ${suffix}`;
   const clientB = `B ${suffix}`;
-  const projectA = `Proyecto de A ${suffix}`;
-  const projectB = `Proyecto de B ${suffix}`;
-  const loose = `Proyecto suelto ${suffix}`;
+  // Agrupados por cliente, el orden sería «Beta», «Alfa», «Aaa»: la tabla
+  // plana los ordena por nombre (D-P1-6).
+  const projectA = `Beta de A ${suffix}`;
+  const projectB = `Alfa de B ${suffix}`;
+  const loose = `Aaa suelto ${suffix}`;
 
   // Criterio 12: se entra por la navegación.
   await page.goto("/");
@@ -257,7 +237,7 @@ test("la pantalla agrupa por cliente en orden alfabético con «Sin cliente» al
     .getByRole("link", { name: "Proyectos", exact: true })
     .click();
   await expect(page).toHaveURL(isProjectsPage);
-  await expect(page.getByRole("heading", { level: 1, name: "Proyectos" })).toBeVisible();
+  await expectProjectsTitle(page);
 
   // PR-04: cada entidad se crea desde un solo lugar.
   await expect(headerButton(page, "Nuevo cliente")).toHaveCount(1);
@@ -272,22 +252,24 @@ test("la pantalla agrupa por cliente en orden alfabético con «Sin cliente» al
   await createProject(page, { name: projectA, client: clientA });
   await createProject(page, { name: loose, client: null, color: "Verde azulado" });
 
-  // El orden, solo entre los grupos que creó este recorrido.
-  const headings = await page.getByRole("heading", { level: 2 }).allTextContents();
-  const ownGroups = headings.filter((text) =>
-    [clientA, clientB, NO_CLIENT].includes(text.trim()),
-  );
-  expect(ownGroups.map((text) => text.trim())).toEqual([clientA, clientB, NO_CLIENT]);
+  // El orden, solo entre las filas que creó este recorrido: la búsqueda por
+  // el sufijo deja a la vista las suyas.
+  await searchProjects(page, suffix);
+  const rows = projectRows(page);
+  await expect(rows).toHaveCount(3);
+  for (const [index, name] of [loose, projectB, projectA].entries()) {
+    await expect(columnCell(rows.nth(index), "Nombre")).toHaveText(name);
+  }
 
-  // PR-14 y PR-97: el proyecto sin cliente está en «Sin cliente», con su
-  // punto de color.
-  const looseProject = projectItem(clientGroup(page, NO_CLIENT), loose);
-  await expect(looseProject).toBeVisible();
+  // PR-14 y PR-97: el proyecto sin cliente dice «Sin cliente», con su punto
+  // de color.
+  const looseProject = projectRow(page, loose);
+  await expect(columnCell(looseProject, "Cliente")).toHaveText(NO_CLIENT);
   await expect(
     looseProject.getByRole("img", { name: "Color: Verde azulado", exact: true }),
   ).toBeVisible();
-  await expect(projectItem(clientGroup(page, clientA), projectA)).toBeVisible();
-  await expect(projectItem(clientGroup(page, clientB), projectB)).toBeVisible();
+  await expect(columnCell(projectRow(page, projectA), "Cliente")).toHaveText(clientA);
+  await expect(columnCell(projectRow(page, projectB), "Cliente")).toHaveText(clientB);
 });
 
 test("el responsable crea una tarea y otra persona member no ve «Nueva tarea»", async ({
@@ -310,7 +292,7 @@ test("el responsable crea una tarea y otra persona member no ve «Nueva tarea»"
   await signIn(otherContext, `e2e-otra-persona-${randomUUID()}@${TEST_EMAIL_DOMAIN}`);
   const otherPage = await otherContext.newPage();
   await openProjects(otherPage);
-  const seen = projectItem(clientGroup(otherPage, NO_CLIENT), project);
+  const seen = projectRow(otherPage, project);
   await expect(seen).toBeVisible();
   await expect(
     taskList(seen, project).getByRole("listitem").filter({ hasText: task }),
@@ -336,7 +318,7 @@ test("si el proyecto se archiva con «Nueva tarea» abierto, el aviso de PR-72 q
   await withServerAction(page, () => saveButton(dialog).click());
 
   await expect(dialog).toBeHidden();
-  await expect(projectsNamed(page, project)).toHaveCount(0);
+  await expect(projectRow(page, project)).toHaveCount(0);
   const notice = screenTaskNotice(page, PROJECT_UNAVAILABLE);
   await expect(notice).toBeVisible();
   await expect(notice).toBeFocused();
@@ -359,7 +341,7 @@ test("si la persona deja de ser responsable con «Nueva tarea» abierto, el avis
   await withServerAction(page, () => saveButton(dialog).click());
 
   await expect(dialog).toBeHidden();
-  const seen = projectItem(clientGroup(page, NO_CLIENT), project);
+  const seen = projectRow(page, project);
   await expect(seen).toBeVisible();
   await expect(newTaskButton(seen, project)).toHaveCount(0);
   const notice = screenTaskNotice(page, FORBIDDEN);

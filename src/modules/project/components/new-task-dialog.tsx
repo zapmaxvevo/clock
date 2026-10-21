@@ -9,7 +9,7 @@ import { retryHandlerOf, useAction } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
 import { projectMessages, type ProjectActions } from "@/modules/project/schema";
 
-import { CreateDialog } from "./create-dialog";
+import { FormDialog } from "./form-dialog";
 import { newTaskLabel, projectLabels } from "./labels";
 import { useProjectNotices } from "./project-notices";
 
@@ -62,7 +62,7 @@ export function NewTaskDialog({
   }
 
   return (
-    <CreateDialog
+    <FormDialog
       noticeKey={noticeKey}
       title={projectLabels.newTask}
       triggerName={newTaskLabel(projectName)}
@@ -86,6 +86,6 @@ export function NewTaskDialog({
           autoComplete="off"
         />
       </div>
-    </CreateDialog>
+    </FormDialog>
   );
 }

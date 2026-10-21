@@ -13,10 +13,12 @@ import {
   type WorkspaceResource,
 } from "@/server/permissions";
 
+import { changedProjectFields, valuesOf } from "./changes";
 import { nextPaletteColor, paletteKeyOf } from "./palette";
 import {
   projectRepository,
   type ClientRow,
+  type ProjectRow,
   type ProjectWithViewer,
   type TagRow,
   type TaskRow,
@@ -32,15 +34,18 @@ import {
   type CreateTagValues,
   type CreateTaskResult,
   type CreateTaskValues,
-  type ProjectCatalog,
   type ProjectFilterCatalog,
+  type ProjectListItem,
+  type ProjectListView,
   type ProjectRef,
-  type ProjectView,
+  type ProjectSettings,
   type TagRef,
   type TaskView,
   type TrackableProject,
   type TrackingCatalog,
   type TrackingProjectView,
+  type UpdateProjectResult,
+  type UpdateProjectValues,
 } from "./schema";
 
 export class ProjectError extends DomainError {
@@ -76,24 +81,11 @@ function toTagRef(row: TagRow): TagRef {
   return { id: row.id, name: row.name };
 }
 
-function toProjectView(
-  actor: Actor,
-  row: ProjectWithViewer,
-  tasks: readonly TaskView[],
-): ProjectView {
-  return {
-    id: row.id,
-    name: row.name,
-    color: paletteKeyOf(row.color, row.id),
-    isPublic: row.isPublic,
-    canCreateTask: can(actor, "task.create", projectResource(row)),
-    tasks,
-  };
-}
-
 /**
- * El nombre repetido que deja salir `createOnce` (PR-91): ya comprobó que la
- * fila propia no existe, así que el choque es con la fila de otro pedido.
+ * Traduce el choque con el índice de nombre de un alta o de una edición al
+ * mensaje del módulo (PR-91). En un alta, `createOnce` ya comprobó que la fila
+ * propia no existe, así que el choque es con la fila de otro pedido; en una
+ * edición, con otro proyecto del mismo cliente (PR-77).
  */
 async function translatingNameTaken<Result>(
   isNameTaken: (error: unknown) => boolean,
@@ -213,12 +205,10 @@ export async function createProject(
               entityId: created.id,
               nextValue: { project: created, member },
             });
-            const viewed = { ...created, viewer: { isManager: member.isManager } };
-            return { project: toProjectView(actor, viewed, []) };
+            return { project: toProjectRef(created) };
           }),
         // Un proyecto propio que ya no se ve, o archivado, responde como el alta
-        // con un id ocupado. El reintento responde sin tareas: el diálogo solo
-        // la usa para cerrarse y la revalidación de `/proyectos` trae las reales.
+        // con un id ocupado.
         replayed: (row) => {
           if (
             row.archivedAt !== null ||
@@ -226,8 +216,84 @@ export async function createProject(
           ) {
             throw new ForbiddenError("project.create");
           }
-          return { project: toProjectView(actor, row, []) };
+          return { project: toProjectRef(row) };
         },
+      }),
+  );
+}
+
+/**
+ * PR-12, PR-15, PR-21, PR-30, PR-55, PR-56: D-P1-3 y D-P1-4. El mismo valor no
+ * escribe. Deja `project.update` con los campos que cambiaron.
+ */
+export async function updateProject(
+  actor: Actor,
+  input: UpdateProjectValues,
+): Promise<UpdateProjectResult> {
+  return translatingNameTaken(
+    projectRepository.isProjectNameTaken,
+    projectMessages.projectNameTaken,
+    () =>
+      db.transaction(async (tx) => {
+        const locked = await projectRepository.lockProject(
+          tx,
+          actor.workspaceId,
+          input.id,
+        );
+        // La marca de responsable se lee con el bloqueo ya tomado (D-P1-3).
+        const row = locked
+          ? await projectRepository.findProject(
+              tx,
+              actor.workspaceId,
+              actor.userId,
+              input.id,
+            )
+          : undefined;
+        // Un privado ajeno, o uno archivado (PR-72, D-P1-4), responde como uno
+        // que no existe.
+        if (
+          row === undefined ||
+          row.archivedAt !== null ||
+          !can(actor, "project.view", projectResource(row))
+        ) {
+          throw new ProjectError("not_found", projectMessages.projectUnavailable);
+        }
+        assertCan(actor, "project.update", projectResource(row));
+        const current = settingsOf(row);
+        const changes = changedProjectFields(current, input);
+        if (Object.keys(changes).length === 0) {
+          return { project: current };
+        }
+        // Solo el cliente nuevo: el que ya tiene se conserva aunque esté
+        // archivado (PR-98).
+        if (changes.clientId !== undefined && changes.clientId !== null) {
+          const owner = await projectRepository.findClient(
+            tx,
+            actor.workspaceId,
+            changes.clientId,
+          );
+          if (owner === undefined || owner.archivedAt !== null) {
+            throw new ProjectError("not_found", projectMessages.clientUnavailable);
+          }
+        }
+        const updated = await projectRepository.updateProject(
+          tx,
+          actor.workspaceId,
+          row.id,
+          changes,
+        );
+        const saved = settingsOf(updated);
+        await recordAudit(tx, {
+          ...auditActorOf(actor),
+          action: "project.update",
+          entity: "project",
+          entityId: row.id,
+          previousValue: valuesOf(current, changes),
+          // De la fila guardada y no de la entrada: la base escribe el id del
+          // cliente en minúsculas.
+          nextValue: valuesOf(saved, changes),
+        });
+        return { project: saved };
       }),
   );
 }
@@ -439,10 +505,10 @@ export async function getProjectFilterCatalog(
 }
 
 /** El cliente de un proyecto, de los leídos en la misma foto. */
-function clientOf(
+function clientOf<Client extends ClientView>(
   row: ProjectWithViewer,
-  clientsById: ReadonlyMap<string, ClientView>,
-): ClientView | null {
+  clientsById: ReadonlyMap<string, Client>,
+): Client | null {
   if (row.clientId === null) {
     return null;
   }
@@ -452,6 +518,33 @@ function clientOf(
     throw new Error(`El proyecto ${row.id} tiene un cliente que no está en la foto.`);
   }
   return found;
+}
+
+/** Las etiquetas activas en orden alfabético; ninguna sin `tag.view` (PR-62). */
+async function readVisibleTags(tx: Transaction, actor: Actor): Promise<TagRef[]> {
+  if (!can(actor, "tag.view", workspaceResource(actor))) {
+    return [];
+  }
+  return sortedByName(await projectRepository.listActiveTags(tx, actor.workspaceId)).map(
+    toTagRef,
+  );
+}
+
+/**
+ * Las tareas de cada proyecto de `projects`, en orden alfabético. Las de un
+ * proyecto que no está en la lista no salen del service.
+ */
+function tasksByProject(
+  projects: readonly ProjectRow[],
+  tasks: readonly TaskRow[],
+): ReadonlyMap<string, readonly TaskView[]> {
+  const byProject = new Map<string, TaskRow[]>(projects.map((row) => [row.id, []]));
+  for (const row of tasks) {
+    byProject.get(row.projectId)?.push(row);
+  }
+  return new Map(
+    [...byProject].map(([id, rows]) => [id, sortedByName(rows).map(toTaskView)]),
+  );
 }
 
 type CatalogRead<Project> = {
@@ -467,13 +560,12 @@ type CatalogRead<Project> = {
 
 /**
  * Las consultas en un mismo snapshot y el armado en memoria: el filtro de
- * acceso es `can()` con `access` sobre cada proyecto (PR-61, PR-93), sin una
+ * acceso es `can()` con `project.track` sobre cada proyecto (TT-08), sin una
  * segunda versión en SQL que pueda desalinearse. Las etiquetas, solo con
  * `tag.view` (PR-62).
  */
 async function readCatalog<Project>(
   actor: Actor,
-  access: "project.view" | "project.track",
   toProject: (row: ProjectWithViewer, tasks: readonly TaskView[]) => Project,
 ): Promise<CatalogRead<Project>> {
   const read = await db.transaction(
@@ -485,24 +577,19 @@ async function readCatalog<Project>(
         actor.userId,
       ),
       tasks: await projectRepository.listActiveTasks(tx, actor.workspaceId),
-      tags: can(actor, "tag.view", workspaceResource(actor))
-        ? await projectRepository.listActiveTags(tx, actor.workspaceId)
-        : [],
+      tags: await readVisibleTags(tx, actor),
     }),
     { isolationLevel: "repeatable read" },
   );
 
-  const allowed = read.projects.filter((row) => can(actor, access, projectResource(row)));
-  // Las tareas de un proyecto descartado no salen del service.
-  const tasksByProject = new Map<string, TaskRow[]>(allowed.map((row) => [row.id, []]));
-  for (const row of read.tasks) {
-    tasksByProject.get(row.projectId)?.push(row);
-  }
+  const allowed = read.projects.filter((row) =>
+    can(actor, "project.track", projectResource(row)),
+  );
+  const tasks = tasksByProject(allowed, read.tasks);
   const byClient = new Map<string | null, Project[]>();
   for (const row of sortedByName(allowed)) {
-    const tasks = sortedByName(tasksByProject.get(row.id) ?? []).map(toTaskView);
     const group = byClient.get(row.clientId) ?? [];
-    group.push(toProject(row, tasks));
+    group.push(toProject(row, tasks.get(row.id) ?? []));
     byClient.set(row.clientId, group);
   }
   // Un cliente sin proyectos que mostrar no forma grupo (PR-62).
@@ -513,7 +600,7 @@ async function readCatalog<Project>(
 
   return {
     clients: read.clients,
-    tags: sortedByName(read.tags).map(toTagRef),
+    tags: read.tags,
     // «Sin cliente» al final (PR-14, PR-97).
     groups:
       withoutClient === undefined
@@ -522,24 +609,87 @@ async function readCatalog<Project>(
   };
 }
 
-/** La pantalla `/proyectos`: los proyectos que la persona ve. */
-export async function getProjectCatalog(actor: Actor): Promise<ProjectCatalog> {
-  const read = await readCatalog(actor, "project.view", (row, tasks) =>
-    toProjectView(actor, row, tasks),
+/**
+ * D-P1-6, D-P1-7, PR-31, PR-61, PR-93: la lista de `/proyectos`. Las consultas
+ * en un mismo snapshot, como `readCatalog`, y el filtro de acceso con `can()`
+ * sobre cada proyecto.
+ */
+export async function getProjectList(actor: Actor): Promise<ProjectListView> {
+  const read = await db.transaction(
+    async (tx) => ({
+      clients: await projectRepository.listClients(tx, actor.workspaceId),
+      projects: await projectRepository.listAllProjects(
+        tx,
+        actor.workspaceId,
+        actor.userId,
+      ),
+      tasks: await projectRepository.listActiveTasksOfAllProjects(tx, actor.workspaceId),
+      tags: await readVisibleTags(tx, actor),
+    }),
+    { isolationLevel: "repeatable read" },
   );
+
+  const clientsById = new Map(
+    read.clients.map((row) => [
+      row.id,
+      { ...toClientView(row), archived: row.archivedAt !== null },
+    ]),
+  );
+  const visible = read.projects.filter((row) =>
+    can(actor, "project.view", projectResource(row)),
+  );
+  const tasks = tasksByProject(visible, read.tasks);
   return {
     canCreateClient: can(actor, "client.create", workspaceResource(actor)),
     canCreateProject: can(actor, "project.create", workspaceResource(actor)),
     canCreateTag: can(actor, "tag.create", workspaceResource(actor)),
     tags: read.tags,
-    clients: sortedByName(read.clients.filter((row) => row.archivedAt === null)).map(
-      toClientView,
+    clients: activeClientViews(read.clients),
+    projects: sortedByName(visible).map((row) =>
+      toProjectListItem(actor, row, clientOf(row, clientsById), tasks.get(row.id) ?? []),
     ),
-    groups: read.groups,
   };
 }
 
-function toProjectRef(row: ProjectWithViewer): ProjectRef {
+function toProjectListItem(
+  actor: Actor,
+  row: ProjectWithViewer,
+  client: ProjectListItem["client"],
+  tasks: readonly TaskView[],
+): ProjectListItem {
+  const active = row.archivedAt === null;
+  const canUpdate = active && can(actor, "project.update", projectResource(row));
+  return {
+    ...toProjectRef(row),
+    client,
+    isPublic: row.isPublic,
+    archived: !active,
+    tasks,
+    canUpdate,
+    canCreateTask: active && can(actor, "task.create", projectResource(row)),
+    // La nota y el facturable por defecto solo viajan a quien puede editarlos.
+    settings: canUpdate ? settingsOf(row) : null,
+  };
+}
+
+/** Lo que la edición escribe de un proyecto, de la fila leída. */
+function settingsOf(row: ProjectRow): ProjectSettings {
+  return {
+    id: row.id,
+    name: row.name,
+    clientId: row.clientId,
+    color: paletteKeyOf(row.color, row.id),
+    note: row.note,
+    billableByDefault: row.billableByDefault,
+  };
+}
+
+/** Los clientes activos, en orden alfabético: los que se pueden asignar. */
+function activeClientViews(clients: readonly ClientRow[]): ClientView[] {
+  return sortedByName(clients.filter((row) => row.archivedAt === null)).map(toClientView);
+}
+
+function toProjectRef(row: ProjectRow): ProjectRef {
   return { id: row.id, name: row.name, color: paletteKeyOf(row.color, row.id) };
 }
 
@@ -549,17 +699,16 @@ function toProjectRef(row: ProjectWithViewer): ProjectRef {
  * `/proyectos` (PR-17).
  */
 export async function getTrackingCatalog(actor: Actor): Promise<TrackingCatalog> {
-  const read = await readCatalog(
-    actor,
-    "project.track",
-    (row, tasks): TrackingProjectView => ({
-      ...toProjectRef(row),
-      tasks,
-      billableByDefault: row.billableByDefault,
-    }),
-  );
+  const read = await readCatalog(actor, (row, tasks): TrackingProjectView => ({
+    ...toProjectRef(row),
+    tasks,
+    billableByDefault: row.billableByDefault,
+  }));
+  const canCreateProject = can(actor, "project.create", workspaceResource(actor));
   return {
-    canCreateProject: can(actor, "project.create", workspaceResource(actor)),
+    canCreateProject,
+    // D-P1-12: para el alta de TT-09.
+    clients: canCreateProject ? activeClientViews(read.clients) : [],
     canCreateTag: can(actor, "tag.create", workspaceResource(actor)),
     tags: read.tags,
     groups: read.groups,

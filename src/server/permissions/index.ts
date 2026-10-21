@@ -99,6 +99,10 @@ type ResourceByAction = {
   "project.view": ProjectResource;
   "project.track": ProjectResource;
   "task.create": ProjectResource;
+  // PR-55, PR-56: editar un proyecto. Owner, admin y su responsable, por la
+  // marca de `project_member` que viaja en el recurso (P-24). El archivado lo
+  // decide el service (PR-72), no `can()`.
+  "project.update": ProjectResource;
   // PR-44, PR-58: «Everyone can create tags». La configuración que la limita a
   // los admins no existe en la fase 1; cuando llegue, recurso propio: ADR 0009.
   "tag.create": WorkspaceResource;
@@ -143,6 +147,7 @@ const resourceKinds = {
   "project.view": ["project"],
   "project.track": ["project"],
   "task.create": ["project"],
+  "project.update": ["project"],
   "tag.create": ["workspace"],
   "tag.view": ["workspace"],
   "profile.own.update": ["profile"],
@@ -180,6 +185,8 @@ const allowedRoles: Record<Action, readonly Role[]> = {
   "project.view": everyone,
   "project.track": everyone,
   "task.create": everyone,
+  // El rol no alcanza: decide `allowsOnProject` (PR-57).
+  "project.update": everyone,
   "tag.create": everyone,
   "tag.view": everyone,
   "profile.own.update": everyone,
@@ -209,6 +216,9 @@ function allowsOnProject(
       return project.isPublic || project.viewer !== null;
     // PR-40.
     case "task.create":
+      return isWorkspaceAdmin(actor) || project.viewer?.isManager === true;
+    // PR-55, PR-56.
+    case "project.update":
       return isWorkspaceAdmin(actor) || project.viewer?.isManager === true;
     default:
       return false;

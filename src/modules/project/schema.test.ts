@@ -7,6 +7,8 @@ import {
   createTagInput,
   createTaskInput,
   projectMessages,
+  projectsSearchParams,
+  updateProjectInput,
 } from "./schema";
 
 const id = "6f1c2a4e-3b5d-4e7f-8a9b-0c1d2e3f4a5b";
@@ -17,7 +19,7 @@ function messageOf(result: z.ZodSafeParseResult<unknown>): string | undefined {
   return result.success ? undefined : result.error.issues.at(0)?.message;
 }
 
-describe("el nombre, en las cuatro altas (PR-54, PR-75, PR-76, PR-109)", () => {
+describe("el nombre, en las cuatro altas y la edición (PR-54, PR-75, PR-76, PR-109)", () => {
   const cases = [
     ["cliente", (name: string) => createClientInput.safeParse({ id, name })],
     [
@@ -27,6 +29,7 @@ describe("el nombre, en las cuatro altas (PR-54, PR-75, PR-76, PR-109)", () => {
     ],
     ["tarea", (name: string) => createTaskInput.safeParse({ id, projectId: id, name })],
     ["etiqueta", (name: string) => createTagInput.safeParse({ id, name })],
+    ["edición de proyecto", (name: string) => updateProjectInput.safeParse({ id, name })],
   ] as const;
 
   for (const [entity, parse] of cases) {
@@ -189,5 +192,101 @@ describe("createTagInput (PR-43)", () => {
     expect(createTagInput.safeParse({ id: uuidV7, name: "Diseño" }).success).toBe(false);
     expect(createTagInput.safeParse({ id: nilUuid, name: "Diseño" }).success).toBe(false);
     expect(createTagInput.safeParse({ name: "Diseño" }).success).toBe(false);
+  });
+});
+
+describe("updateProjectInput (D-P1-3, D-P1-4)", () => {
+  it("solo el id: un parche vacío, sin defaults que lo conviertan en reemplazo", () => {
+    expect(updateProjectInput.parse({ id })).toEqual({ id });
+  });
+
+  it("cada campo por separado viaja solo", () => {
+    expect(updateProjectInput.parse({ id, note: "  Nota  " })).toEqual({
+      id,
+      note: "Nota",
+    });
+    expect(updateProjectInput.parse({ id, color: "teal" })).toEqual({
+      id,
+      color: "teal",
+    });
+    expect(updateProjectInput.parse({ id, billableByDefault: false })).toEqual({
+      id,
+      billableByDefault: false,
+    });
+    expect(updateProjectInput.parse({ id, clientId: id })).toEqual({ id, clientId: id });
+  });
+
+  it("acepta clientId null, que es «Sin cliente» (PR-14)", () => {
+    expect(updateProjectInput.parse({ id, clientId: null })).toEqual({
+      id,
+      clientId: null,
+    });
+  });
+
+  it("rechaza el color null: asignarlo es del alta (PR-15)", () => {
+    expect(updateProjectInput.safeParse({ id, color: null }).success).toBe(false);
+    expect(updateProjectInput.safeParse({ id, color: "magenta" }).success).toBe(false);
+  });
+
+  it("rechaza una nota de más de 3000 caracteres y el carácter nulo en ella", () => {
+    expect(updateProjectInput.safeParse({ id, note: "a".repeat(3000) }).success).toBe(
+      true,
+    );
+    expect(messageOf(updateProjectInput.safeParse({ id, note: "a".repeat(3001) }))).toBe(
+      projectMessages.noteTooLong,
+    );
+    expect(messageOf(updateProjectInput.safeParse({ id, note: "a\u0000" }))).toBe(
+      projectMessages.nullCharacter,
+    );
+  });
+
+  it("rechaza un facturable que no es booleano y un id que no es UUID", () => {
+    expect(updateProjectInput.safeParse({ id, billableByDefault: "true" }).success).toBe(
+      false,
+    );
+    expect(updateProjectInput.safeParse({ id: "web" }).success).toBe(false);
+    expect(updateProjectInput.safeParse({ id, clientId: "acme" }).success).toBe(false);
+  });
+
+  it("acepta cualquier UUID como id: el proyecto puede venir de la importación", () => {
+    expect(updateProjectInput.safeParse({ id: uuidV7 }).success).toBe(true);
+  });
+});
+
+describe("projectsSearchParams (D-P1-6, ADR 0008)", () => {
+  it.each(["activos", "archivados", "todos"] as const)("acepta ?estado=%s", (estado) => {
+    expect(projectsSearchParams.parse({ estado })).toMatchObject({ estado });
+  });
+
+  it("sin parámetros, sin estado ni búsqueda", () => {
+    const parsed = projectsSearchParams.parse({});
+    expect(parsed.estado).toBeUndefined();
+    expect(parsed.buscar).toBeUndefined();
+  });
+
+  it("un estado desconocido o repetido queda sin estado", () => {
+    expect(projectsSearchParams.parse({ estado: "x" }).estado).toBeUndefined();
+    expect(
+      projectsSearchParams.parse({ estado: ["todos", "activos"] }).estado,
+    ).toBeUndefined();
+  });
+
+  it("una búsqueda repetida o de más de 100 caracteres queda sin búsqueda", () => {
+    expect(projectsSearchParams.parse({ buscar: ["web", "app"] }).buscar).toBeUndefined();
+    expect(
+      projectsSearchParams.parse({ buscar: "a".repeat(101) }).buscar,
+    ).toBeUndefined();
+    expect(projectsSearchParams.parse({ buscar: "a".repeat(100) }).buscar).toBe(
+      "a".repeat(100),
+    );
+  });
+
+  it("un estado inválido no se lleva la búsqueda válida, ni al revés", () => {
+    expect(projectsSearchParams.parse({ estado: "x", buscar: "web" })).toMatchObject({
+      buscar: "web",
+    });
+    expect(
+      projectsSearchParams.parse({ estado: "todos", buscar: "a".repeat(101) }),
+    ).toMatchObject({ estado: "todos" });
   });
 });

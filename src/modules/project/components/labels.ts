@@ -1,3 +1,5 @@
+import type { ProjectFilter } from "@/modules/project/schema";
+
 /**
  * Textos de la pantalla de proyectos y del selector de proyecto. Los mensajes
  * de error de las actions no viven acá: salen de `projectMessages`, en el
@@ -9,10 +11,35 @@ export const projectLabels = {
   newClient: "Nuevo cliente",
   newProject: "Nuevo proyecto",
   newTask: "Nueva tarea",
+  /** D-P1-7: el texto del botón de la fila; su nombre accesible es `editProjectLabel`. */
+  edit: "Editar",
+  /** D-P1-8: el título del diálogo de edición. */
+  editProject: "Editar proyecto",
   /** PR-14 y PR-97: el grupo de los proyectos sin cliente y su opción en el diálogo. */
   noClient: "Sin cliente",
   /** PR-85: ningún proyecto visible. */
   empty: "Todavía no hay proyectos",
+  /** PR-89: con «Activos» y todos archivados. */
+  noActive: "No hay proyectos activos",
+  noActiveHint: "Elegí «Archivados» o «Todos» en el estado para verlos.",
+  /** D-P1-6: con «Archivados» y ninguno. */
+  noArchived: "No hay proyectos archivados",
+  /** PR-31: el buscador y el filtro de la lista. */
+  searchProjects: "Buscar proyecto o cliente",
+  statusFilter: "Estado",
+  /** PR-31: las columnas de la tabla; la de acciones solo la lee el lector de pantalla. */
+  columns: {
+    name: "Nombre",
+    client: "Cliente",
+    access: "Acceso",
+    tasks: "Tareas",
+    actions: "Acciones",
+  },
+  /** PR-16 y PR-17: la columna «Acceso». */
+  public: "Público",
+  private: "Privado",
+  /** PR-31: la marca de un archivado con «Todos». */
+  archived: "Archivado",
   /** Los campos de los tres diálogos. */
   name: "Nombre",
   address: "Dirección",
@@ -28,6 +55,8 @@ export const projectLabels = {
   clientNotCreated: "No se pudo crear el cliente.",
   projectNotCreated: "No se pudo crear el proyecto.",
   taskNotCreated: "No se pudo crear la tarea.",
+  /** TT-90: la edición de un proyecto. */
+  projectNotSaved: "No se pudieron guardar los cambios.",
   save: "Guardar",
   saving: "Guardando…",
   cancel: "Cancelar",
@@ -41,7 +70,10 @@ export const projectLabels = {
   pickerSearch: "Buscar proyecto, cliente o tarea",
   /** TT-87: el selector de un workspace sin proyectos. */
   pickerNoProjects: "No hay proyectos todavía",
+  /** TT-88: el selector de etiquetas vacío; el de proyecto ofrece crear (TT-87). */
   pickerGoToProjects: "Ir a Proyectos",
+  /** TT-09: la última opción del selector, con `project.create`. */
+  pickerCreateProject: "Crear proyecto",
   /** TT-07: la búsqueda del selector sin coincidencias. */
   pickerNoMatches: "Ningún proyecto coincide con la búsqueda.",
   /** TS-18: el selector de una fila nueva de la planilla, con todo ya usado. */
@@ -63,6 +95,13 @@ export const projectLabels = {
   tagPickerNoTags: "No hay etiquetas todavía",
   tagPickerNoMatches: "Ninguna etiqueta coincide con la búsqueda.",
 } as const;
+
+/** PR-31: los tres valores del filtro de estado, como los dice el selector. */
+export const projectFilterNames = {
+  activos: "Activos",
+  archivados: "Archivados",
+  todos: "Todos",
+} as const satisfies { readonly [F in ProjectFilter]: string };
 
 /**
  * PR-62: un cliente sin proyectos no aparece en la lista, así que el alta se
@@ -89,6 +128,21 @@ export function withTagNames(label: string, names: readonly string[]): string {
 /** H-5 y PR-47: la etiqueta de una entrada que ya no está en el catálogo. */
 export function archivedTagLabel(name: string): string {
   return `${name} (archivada)`;
+}
+
+/** D-P1-7: el nombre accesible de «Editar» dice qué proyecto edita. */
+export function editProjectLabel(projectName: string): string {
+  return `${projectLabels.edit} «${projectName}»`;
+}
+
+/** D-P1-8: la fila ya muestra lo nuevo; el anuncio confirma la edición. */
+export function projectSavedLabel(name: string): string {
+  return `Proyecto «${name}» guardado`;
+}
+
+/** D-P1-9: el cliente archivado de un proyecto, en el selector de la edición. */
+export function archivedClientLabel(name: string): string {
+  return `${name} (archivado)`;
 }
 
 /** El nombre accesible de «Nueva tarea» dice a qué proyecto se suma. */

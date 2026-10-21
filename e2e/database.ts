@@ -1246,3 +1246,120 @@ export async function workspaceNameOf(): Promise<string> {
     return row.name;
   });
 }
+
+/**
+ * Siembra un cliente activo sin proyectos en el workspace de los e2e (P1). Es
+ * el cliente al que la edición mueve un proyecto: el diálogo lo ofrece porque
+ * la pantalla lo lee al cargar, así que se siembra antes de entrar.
+ */
+export async function seedClient(name: string): Promise<void> {
+  await withDatabase(async (client) => {
+    await insertOneRow(
+      client,
+      `insert into client (workspace_id, name)
+       values (${FIRST_WORKSPACE}, $1)
+       returning id`,
+      [name],
+    );
+  });
+}
+
+/**
+ * Archiva un cliente del workspace de los e2e por su nombre. Archivar
+ * clientes llega con P3: es el estado del cliente de un proyecto que el
+ * diálogo de edición conserva (PR-98, D-P1-9).
+ */
+export async function archiveClient(name: string): Promise<void> {
+  await updateOne(
+    `update client
+        set archived_at = now()
+      where workspace_id = ${FIRST_WORKSPACE}
+        and name = $1`,
+    [name],
+  );
+}
+
+/**
+ * Hace a una persona responsable de un proyecto, con o sin fila previa de
+ * miembro. Asignar responsables llega con P6: es la marca con que un `member`
+ * edita un proyecto que no creó (PR-55, D-P1-2). La persona tiene que haber
+ * entrado antes, que es lo que le crea la membresía.
+ */
+export async function makeProjectManager(email: string, name: string): Promise<void> {
+  await withDatabase(async (client) => {
+    await insertOneRow(
+      client,
+      `insert into project_member (workspace_id, project_id, user_id, is_manager)
+       select membership.workspace_id, project.id, membership.user_id, true
+         from membership
+         join "user" on "user".id = membership.user_id
+         join project on project.workspace_id = membership.workspace_id
+                     and project.name = $2
+        where membership.workspace_id = ${FIRST_WORKSPACE}
+          and "user".email = $1
+       on conflict (project_id, user_id) do update
+         set is_manager = true, updated_at = now()
+       returning project_id as id`,
+      [email, name],
+    );
+  });
+}
+
+/**
+ * Una constancia `project.update` (§4.5 de P1): los campos que cambiaron, con
+ * su valor anterior y el nuevo, y el correo de quien la dejó.
+ */
+export type ProjectUpdateAudit = {
+  readonly actorEmail: string | null;
+  readonly previousValue: Readonly<Record<string, unknown>>;
+  readonly nextValue: Readonly<Record<string, unknown>>;
+};
+
+/**
+ * Las constancias `project.update` de un proyecto, de la más vieja a la más
+ * nueva. Se busca por id porque la edición puede cambiar el nombre: el
+ * recorrido lo lee con `projectIdOf` antes de editar.
+ */
+export async function projectUpdateAuditsOf(
+  projectId: string,
+): Promise<readonly ProjectUpdateAudit[]> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{
+      email: string | null;
+      previous_value: string | null;
+      next_value: string | null;
+    }>(
+      `select "user".email, audit_log.previous_value, audit_log.next_value
+         from audit_log
+         left join "user" on "user".id = audit_log.actor_id
+        where audit_log.workspace_id = ${FIRST_WORKSPACE}
+          and audit_log.action = 'project.update'
+          and audit_log.entity = 'project'
+          and audit_log.entity_id = $1
+        order by audit_log.created_at, audit_log.id`,
+      [projectId],
+    );
+    return result.rows.map((row) => ({
+      actorEmail: row.email,
+      previousValue: JSON.parse(row.previous_value ?? "{}") as Record<string, unknown>,
+      nextValue: JSON.parse(row.next_value ?? "{}") as Record<string, unknown>,
+    }));
+  });
+}
+
+/**
+ * Cuántos proyectos del workspace de los e2e tienen ese nombre, en cualquier
+ * cliente y estado: el reintento de un alta tiene que dejar uno (ADR 0007).
+ */
+export async function projectCountNamed(name: string): Promise<number> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ count: number }>(
+      `select count(*)::int as count
+         from project
+        where workspace_id = ${FIRST_WORKSPACE}
+          and name = $1`,
+      [name],
+    );
+    return result.rows.at(0)?.count ?? 0;
+  });
+}

@@ -172,7 +172,7 @@ grupos (E7) van justo antes de P9, y las plantillas, al final.
 | P5    | Etiquetas                                     | P2                                        |
 | P6    | Proyectos privados, miembros y responsables   | P1, E2                                    |
 | P7    | Asignados de tarea                            | P4, P6                                    |
-| P8    | Favoritos                                     | —                                         |
+| P8    | Favoritos                                     | P1                                        |
 | E7    | Grupos                                        | E2, y P-10 de `equipo.md` confirmado (§7) |
 | P9    | Grupos en proyectos y tareas                  | E7, P6, P7                                |
 | T1    | Plantillas de la planilla                     | — (al final de la fase, §7)               |
@@ -183,6 +183,10 @@ service: van en serie. E7 toca la misma pantalla de equipo, pero va después,
 cuando ya no queda otro slice de equipo en curso. P1 a P7 tocan `/proyectos` y
 el módulo `project`: van en serie salvo que el contrato de P1 separe las
 pantallas (ver P1).
+
+_Corregido el 2026-10-21, P1_: P8 decía «—» en la tabla. Depende de P1, porque
+TT-09 reescribe `picker-model.ts` y `project-picker.tsx`, que P8 también toca.
+El contrato de P1 no separó las pantallas: P1 a P7 van en serie (ver P1).
 
 ### Lo que vale para todos
 
@@ -588,7 +592,7 @@ invitación pendiente que la deje volver). Riesgos: la clave `restrict` de
 `time_entry` hacia `membership` es la red, pero el service responde EQ-87
 antes; el audit log guarda la fila borrada.
 
-### P1 — Editar proyectos y la lista completa
+### P1 — Editar proyectos, la lista completa y TT-09
 
 Cubre la edición de PR-12 (nombre, cliente, color, nota), PR-21 en un proyecto
 ya creado (la deuda del 11a: el facturable por defecto no se ve ni se edita
@@ -614,6 +618,16 @@ Riesgos:
   separadas, P3, P4 y P5 pueden ir en paralelo.
 - **Cambiar el cliente choca con la unicidad** (PR-50): responde PR-77.
 - **Editar el facturable por defecto no toca entradas** (TT-14).
+
+_Corregido el 2026-10-21, P1_: el riesgo de dónde vive la administración de un
+proyecto quedó decidido. Todo se administra en `/proyectos`, con un diálogo
+desde la fila, sin página propia por proyecto, y clientes y etiquetas no se
+mudan (decisión del usuario del 2026-10-21, D-P1-1 del
+[contrato de P1](fase2-p1-proyectos.md)). Por eso **P2 … P7 van en serie**:
+suman sus acciones a la misma fila, a la misma cabecera y al mismo módulo. El
+título de esta sección suma «y TT-09», como la tabla de la §3. Y «Crear
+proyecto» no espera a que la búsqueda no encuentre nada: es siempre la última
+opción de la lista del selector (D-P1-10).
 
 ### P2 — Archivar, restaurar y borrar proyectos
 
@@ -712,6 +726,10 @@ Cubre PR-27 y WS-26: una tabla por persona y proyecto (y tarea, si el contrato
 lo confirma), sin interruptor de workspace. Sin dependencias; toca los
 selectores del rastreador, la planilla y el calendario, que comparten
 `picker-model`.
+
+_Corregido el 2026-10-21, P1_: decía «Sin dependencias». Depende de P1, porque
+TT-09 reescribe `picker-model.ts` y `project-picker.tsx`, que P8 también toca
+(§3).
 
 ### E7 — Grupos
 
