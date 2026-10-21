@@ -283,7 +283,19 @@ vacío del owner y `renewWorkspace` se corta.
      `backend-dev` probó dos veces en el árbol compartido; repetir en cada encargo que las
      pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
      `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
-     **Decimoséptima sesión** (2026-10-20/21). **Cierre (2026-10-21 ~02:15 UTC):**
+     **Decimoctava sesión** (2026-10-21):
+     - **MCP en producción.** El usuario corrió en Neon `main` el bloque de la `0019`; el
+       control dio `1792540623295 | 20 | fcf1b85b… | 9 | 1 | 0` (una primera corrida, por
+       error, fue en la rama `preview`: 10 constancias con cliente, de las pruebas de V-7).
+       Las consultas quedaron en `/home/maxi/program/clock-ops/mcp-0019-previa-control.sql`.
+       Push de `34ed2b5`, deploy y humo OK, y el usuario conectó el MCP en producción.
+     - **WS2a:** `ws2a-rebase` lo rebasa sobre `main`, regenera la migración como `0020`,
+       corre la final y arma `/home/maxi/program/clock-ops/ws2a-0020-do.sql`.
+     - **WS2b:** contrato en `clock-ws2b` (rama `fase2/ws2b-selector`, `507da74`), sin
+       migración ni ADR nuevo; en revisión de arquitectura. Preguntas al usuario: si el MCP
+       sigue en minutos con el completo y si el selector va sin el ejemplo «1:30» (WS-15).
+       Se implementa después de que WS2a esté en `main`.
+       **Decimoséptima sesión** (2026-10-20/21). **Cierre (2026-10-21 ~02:15 UTC):**
      - **En producción:** la `0018` de WS0 (control OK), WS1 (`2dc1452`) y `npm audit fix`
        (`467e730`, vite 8.3.4, CI verde). Falta del usuario la §6.6 de WS0: logs de Runtime
        sin «does not exist» por 15 min y humo.
