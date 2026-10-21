@@ -172,7 +172,9 @@ tope de 500 filas.**
   `list_entries`. Ninguna otra anotación: las de solo lectura de hoy no llevan
   más.
 - **`mcp_call_window` no cambia**: cada `POST` cuenta uno, las herramientas
-  nuevas también, con el mismo tope de 120 por minuto y persona (D-MCP-13).
+  nuevas también, con el mismo tope de 120 por minuto y persona (D-MCP-13). Un
+  `POST` lleva un solo mensaje: un lote responde 400 sin consumir del tope
+  (§1).
 - **Tope de duración por sentencia: el de las exportaciones**, `set local
 statement_timeout` de 8 s (`REPORT_EXPORT_STATEMENT_TIMEOUT_MS`, S3 de
   `correcciones-nucleo-reportes-r6a-revisiones.md`). Un asistente se parece
@@ -255,7 +257,13 @@ Queda afuera: §11.
 | `src/modules/mcp/handler.integration.test.ts`                | La lista de `tools/list` pasa de ocho a diez                                                                                                                                          | ese test                                                                                                                                                                    |
 | `src/modules/mcp/components/consent-screen.tsx`, `labels.ts` | La oración con `seesTeam`                                                                                                                                                             | `consent-screen.test.tsx`; e2e 1 de `mcp.spec.ts`                                                                                                                           |
 
-- **Sin cambio**: `can()` y `permissions.test.ts`, `time-entry/`, `handler.ts`,
+- **`src/modules/mcp/handler.ts`** rechaza un lote JSON-RPC con 400 y `-32600`
+  antes de `consumeCall` (revisión de seguridad, mayor): el transporte del SDK
+  acepta hasta 100 mensajes por `POST` y el tope cuenta uno por `POST`, así que
+  un lote multiplicaba por cien las 120 llamadas por minuto. La versión
+  2025-06-18 del protocolo ya no tiene lotes, y claude.ai y Claude Code no los
+  mandan. Se prueba en `handler.integration.test.ts`.
+- **Sin cambio**: `can()` y `permissions.test.ts`, `time-entry/`,
   `mcp-context.ts`, `mcp-auth.ts`, `oauth-records.ts`, `audit.ts`,
   `export/handler.ts`, la página de reportes, `/equipo`, el esquema de la base.
 - **La página y las exportaciones** pasan `PAGE_READ` y `EXPORT_READ`: deciden

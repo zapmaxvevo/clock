@@ -14,6 +14,7 @@ export const MCP_CALLS_PER_MINUTE = 120;
 export const mcpMessages = {
   unexpected: "No se pudo completar el pedido. Volvé a intentar.",
   rateLimited: "Demasiados pedidos seguidos. Esperá un minuto y volvé a intentar.",
+  batchUnsupported: "El servidor no acepta lotes JSON-RPC: mandá un mensaje por pedido.",
   grantForbidden: "No tenés permiso para hacer esto.",
   consentExpired: "El pedido de conexión venció. Volvé a conectar desde el asistente.",
   consentForbidden: "Tu acceso al workspace no permite conectar asistentes.",

@@ -8,6 +8,7 @@ import { db } from "@/server/db";
 import {
   auditLog,
   invitation,
+  mcpCallWindow,
   membership,
   oauthConsent,
   oauthRefreshToken,
@@ -545,6 +546,45 @@ describe("el transporte (criterio 15)", () => {
 
     expect(response.status).toBe(413);
     expect(await writes()).toEqual(before);
+  });
+
+  it("un lote JSON-RPC responde 400 con -32600 sin ejecutar ninguna llamada ni consumir del tope (D-MCP-13)", async () => {
+    const person = await seedPerson();
+    const grant = await issueTestGrant(person.email);
+    await expectAccepted(grant.accessToken);
+    const callsOf = async () =>
+      (
+        await db
+          .select({ calls: mcpCallWindow.calls })
+          .from(mcpCallWindow)
+          .where(eq(mcpCallWindow.userId, person.userId))
+      ).at(0)?.calls;
+    const before = await writes();
+    expect(await callsOf()).toBe(1);
+
+    const response = await callMcp(grant.accessToken, rpc.toolsList(), {
+      rawBody: JSON.stringify([
+        rpc.toolsCall("create_entry", ENTRY_ARGS, 1),
+        rpc.toolsCall("create_entry", { ...ENTRY_ARGS, start: "11:00", end: "12:00" }, 2),
+      ]),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      jsonrpc: "2.0",
+      error: { code: -32600, message: mcpMessages.batchUnsupported },
+      id: null,
+    });
+    expect(await writes()).toEqual(before);
+    expect(await callsOf()).toBe(1);
+    // Un mensaje suelto sigue pasando y cuenta uno.
+    const single = await callMcp(
+      grant.accessToken,
+      rpc.toolsCall("create_entry", ENTRY_ARGS),
+    );
+    expect(single.status).toBe(200);
+    expect((await writes()).entries).toBe(before.entries + 1);
+    expect(await callsOf()).toBe(2);
   });
 
   it("un Origin ajeno responde 403; uno de MCP_ALLOWED_ORIGINS, el propio y ninguno pasan; ninguna respuesta lleva Mcp-Session-Id", async () => {
