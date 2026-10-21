@@ -15,9 +15,10 @@ del rebase; la tabla de esa sección da los nuevos.
 El 2026-10-20, por el team-lead:
 
 - **Pregunta 2** (los `check` de `workspace.name`): **sí**. La consulta 4 de
-  §6.1 no se corrió en producción: los workspaces de producción se llaman
-  «run0km» y «soybot», que cumplen las dos condiciones. La `0019` se regeneró
-  con ellos (ver «La migración»).
+  §6.1 no se corrió en producción: el workspace de producción se llama
+  «run0km», que cumple las dos condiciones. La `0019` se regeneró con él (ver
+  «La migración»).
+  _Corregido el 2026-10-21_: producción tiene un solo workspace, «run0km»; «run0km» y «soybot» son los dos dominios de correo habilitados para entrar en él (dato del usuario; la previa de la `0020` dio 1).
 - **Pregunta 3** (los segundos sueltos de una celda con el completo): **no se
   tocan**. D-WS2a-8 queda como está.
 - **Pregunta 1** (el ADR 0029): **aceptado**, después de que se le explicara

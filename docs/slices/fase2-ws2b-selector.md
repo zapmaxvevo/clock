@@ -291,11 +291,12 @@ de datos (P-07).** El mapa lo deja al contrato. Con el selector:
   los e2e y los tests de integración que esperan el compacto por omisión, y
   pediría su propia transición. Para una fila, no compensa.
 
-**Producción tiene dos workspaces**, «run0km» y «soybot»
-(`correcciones-fase2-ws2a-revisiones.md:17-20`), y la sesión usa solo el más
-viejo (`findFirstWorkspace`, `workspace/repository.ts:73-83`). El selector
-cambia la fila de ese, que es el de la sesión del owner; la del otro no la lee
-nadie y queda en `compact`. Las consultas de §6 filtran por el más viejo.
+**La sesión usa solo el workspace más viejo** (`findFirstWorkspace`,
+`workspace/repository.ts:73-83`), y el selector cambia la fila de ese. Las
+consultas de §6 filtran por el más viejo. _Corregido el 2026-10-21_: producción
+tiene un solo workspace, «run0km»; «run0km» y «soybot» son los dos dominios de
+correo que entran en él. El filtro queda igual: no cambia el resultado y sigue
+valiendo si se suma otro.
 
 **D-WS2b-12 — Los e2e que cambian el formato corren en un proyecto propio,
 `duration-switch`, después del completo y solos.** El formato es de todo el
@@ -732,8 +733,8 @@ export function cellText(cell: ExportCell, durationFormat: DurationFormat): stri
 
 Hechos que el contrato da por dados: Vercel despliega `main` a producción en
 cada push y el build no corre migraciones; las corre el usuario con `!`.
-**Producción tiene dos workspaces** (D-WS2b-11): toda consulta de esta sección
-mira solo el más viejo, el de la sesión.
+Toda consulta de esta sección mira solo el workspace más viejo, el de la sesión
+(D-WS2b-11); producción tiene uno solo.
 
 ### 6.1 Condiciones antes del push de WS2b
 
@@ -797,7 +798,7 @@ Con el humo de §6.2 en verde, el mismo día (D-WS2b-11):
    cambio; una constancia `workspace.updateSetting` sobre `workspace_settings`,
    con `previous_value` `{"durationFormat":"compact"}` y `next_value`
    `{"durationFormat":"full"}`, literales y sin espacios (§4.5), y el correo del
-   owner. La fila del otro workspace no se mira: nadie la lee. **Otra cosa**
+   owner. **Otra cosa**
    frena: se vuelve a «Compacto» con el selector y se avisa al team-lead.
 
 3. **Las pantallas**, con la sesión del owner:
