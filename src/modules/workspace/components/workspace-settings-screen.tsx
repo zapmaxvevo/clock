@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { InactiveMembershipNotice } from "@/components/inactive-membership-notice";
 import { NameField } from "@/components/name-field";
 import {
@@ -9,6 +11,26 @@ import {
 
 import { DurationFormatField } from "./duration-format-field";
 import { workspaceSettingsLabels } from "./labels";
+
+/** Un grupo de ajustes (WS-03): la `<section>` nombrada por su `<h2>`. */
+function SettingsSection({
+  id,
+  title,
+  children,
+}: {
+  readonly id: string;
+  readonly title: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <section aria-labelledby={id} className="flex flex-col gap-4">
+      <h2 id={id} className="text-base font-medium">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
 
 type WorkspaceSettingsScreenProps = {
   /** Sin `workspace.settings.update`, sin ajustes (D-WS1-5). */
@@ -30,13 +52,10 @@ export function WorkspaceSettingsScreen({ view, actions }: WorkspaceSettingsScre
 
       {view.kind === "ready" ? (
         <>
-          <section
-            aria-labelledby="workspace-settings-general"
-            className="flex flex-col gap-4"
+          <SettingsSection
+            id="workspace-settings-general"
+            title={workspaceSettingsLabels.general}
           >
-            <h2 id="workspace-settings-general" className="text-base font-medium">
-              {workspaceSettingsLabels.general}
-            </h2>
             <NameField
               save={actions.updateWorkspaceName}
               value={view.name}
@@ -46,19 +65,16 @@ export function WorkspaceSettingsScreen({ view, actions }: WorkspaceSettingsScre
               failureTitle={workspaceSettingsLabels.nameFailed}
               unreachableMessage={workspaceSettingsMessages.unexpected}
             />
-          </section>
-          <section
-            aria-labelledby="workspace-settings-time-tracking"
-            className="flex flex-col gap-4"
+          </SettingsSection>
+          <SettingsSection
+            id="workspace-settings-time-tracking"
+            title={workspaceSettingsLabels.timeTracking}
           >
-            <h2 id="workspace-settings-time-tracking" className="text-base font-medium">
-              {workspaceSettingsLabels.timeTracking}
-            </h2>
             <DurationFormatField
               value={view.durationFormat}
               save={actions.updateWorkspaceSetting}
             />
-          </section>
+          </SettingsSection>
         </>
       ) : view.reason === "inactive" ? (
         <InactiveMembershipNotice body={workspaceSettingsLabels.forbiddenBody} />
