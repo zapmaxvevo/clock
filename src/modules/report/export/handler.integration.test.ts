@@ -105,6 +105,11 @@ const settings = workspaceOf(buenosAires);
  */
 const fakeNow = new Date("2026-10-01T15:00:00Z");
 
+/** Los días entre el 30/12/1899 de Excel y el 01/01/1970 de JavaScript. */
+const EXCEL_EPOCH_OFFSET_DAYS = 25_569;
+
+const DAY_MS = 86_400_000;
+
 const FILE_NAME = /^reporte_[a-z-]+_\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.csv$/;
 
 let seeded: SeededWorkspace;
@@ -529,23 +534,22 @@ describe("el formato de duración del workspace (D-WS2b-9, WS-17, WS-69; criteri
     await setDurationFormat(seeded.workspaceId, "full");
 
     const sheet = await sheetOf(await exportAs("xlsx", weekQuery), exportLabels.entries);
-    const durations: { value: unknown; numFmt: string }[] = [];
+    const serials: number[] = [];
     sheet.eachRow((row) =>
       row.eachCell((cell) => {
-        if (cell.numFmt === "[hh]:mm:ss") {
-          durations.push({ value: cell.value, numFmt: cell.numFmt });
+        // Al leer, la biblioteca convierte en `Date` un número con formato de hora.
+        if (cell.numFmt === "[hh]:mm:ss" && cell.value instanceof Date) {
+          serials.push(cell.value.getTime() / DAY_MS + EXCEL_EPOCH_OFFSET_DAYS);
         }
       }),
     );
 
-    // El total, el facturable y las dos entradas; la biblioteca devuelve un `Date`.
-    expect(durations).toHaveLength(4);
-    expect(durations.map(({ value }) => value instanceof Date)).toEqual([
-      true,
-      true,
-      true,
-      true,
-    ]);
+    // El total, el facturable y las dos entradas, en segundos y no en minutos.
+    const expected = [200, 0, 100, 100].map((seconds) => seconds / 86_400);
+    expect(serials).toHaveLength(expected.length);
+    serials.forEach((serial, index) => {
+      expect(serial).toBeCloseTo(expected[index] ?? Number.NaN, 9);
+    });
   });
 });
 
