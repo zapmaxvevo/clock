@@ -15,6 +15,7 @@ const READY: ConsentView = {
   clientName: "Asistente de prueba",
   returnsTo: "esta computadora",
   email: "persona@empresa.com",
+  seesTeam: false,
 };
 
 // La sesión y la vista cargan la base y Better Auth; acá las dan los dobles.

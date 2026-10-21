@@ -141,6 +141,12 @@ export async function getConsentView(
     clientName: clientNameOf(client.name),
     returnsTo: returnsToOf(redirectUri),
     email: context.user.email,
+    // D-MCPE-8: lo que el asistente ve lo decide `scopeOf` en cada llamada.
+    seesTeam: can(
+      context.actor,
+      "timeEntry.others.view",
+      workspaceResource(context.actor),
+    ),
   };
 }
 

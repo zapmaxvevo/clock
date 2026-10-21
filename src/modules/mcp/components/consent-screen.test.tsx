@@ -12,6 +12,7 @@ const ready: ConsentView = {
   clientName: "Asistente de prueba",
   returnsTo: "asistente.example",
   email: "ana@empresa.com",
+  seesTeam: false,
 };
 
 function render(

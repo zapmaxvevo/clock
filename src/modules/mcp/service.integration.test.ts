@@ -239,6 +239,7 @@ describe("getConsentView (§5.1, D-MCP-15)", () => {
       clientName: "Claude",
       returnsTo: "claude.ai",
       email,
+      seesTeam: false,
     });
   });
 

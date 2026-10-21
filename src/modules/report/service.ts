@@ -1,5 +1,6 @@
 import { compareNames } from "@/lib/text";
 import { db, type Transaction } from "@/server/db";
+import { DomainError } from "@/server/errors";
 import { can, type Actor, type WorkspaceResource } from "@/server/permissions";
 import {
   addDaysToKey,
@@ -65,6 +66,7 @@ import {
   reportLevelsOf,
   type ReportChart,
   type ReportEntryRow,
+  type ReportErrorCode,
   type ReportExportEntries,
   type ReportFilters,
   type ReportGroup,
@@ -75,6 +77,14 @@ import {
   type ReportState,
   type ReportTimeGroupBy,
 } from "./schema";
+
+/** Error de dominio del reporte. La herramienta lo traduce con `failureOf`. */
+export class ReportError extends DomainError<ReportErrorCode> {
+  constructor(code: ReportErrorCode, message: string) {
+    super(code, message);
+    this.name = "ReportError";
+  }
+}
 
 type ScopePeople =
   /** `timeEntry.others.view`: todas las personas del workspace, activas e inactivas (RP-02, RP-61). */
