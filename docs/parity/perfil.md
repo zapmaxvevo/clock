@@ -583,8 +583,8 @@ Dos bloques, como Clockify: identidad arriba —nombre editable (PF-07), foto y
 correo en solo lectura (PF-06, PF-09)— y preferencias abajo, con los ajustes de
 hora y fecha agrupados, y el tema. El primer día de la semana aparece entre las
 preferencias, en solo lectura, con una nota de que lo administra el equipo
-(PF-01), y el formato de duración también, con la nota de que es del workspace
-(PF-02).
+(PF-01), y el formato de duración también, con el valor del workspace y la nota
+de que es del workspace (PF-02).
 
 _Agregado el 2026-10-04, slice 7, y reemplazado el 2026-10-05, slice 7b_:
 «Datos de la cuenta» tiene la foto o las iniciales, el campo «Nombre» (PF-07),
@@ -599,6 +599,14 @@ _Corregido el 2026-10-05, slice 7b_: la nota del slice 7 decía que hasta el 7b
 el nombre estaba en solo lectura, como la foto y el correo, con la nota «El
 nombre, la foto y el correo salen de tu cuenta de Google.», y que el tema no
 estaba.
+
+_Corregido el 2026-10-21, WS2b_: el formato de duración se mostraba siempre
+como «Compacto (h:mm)», un texto fijo, porque hasta WS2b nadie podía elegir
+otro. Desde WS2b muestra el valor del workspace, con el mismo texto que la
+opción elegida en el selector de `/configuracion` (WS-15) y la misma nota, «Lo
+define el workspace.». El valor sale de la sesión, sin consulta propia, y los
+textos se escriben una sola vez, del lado del workspace
+([contrato de WS2b](../slices/fase2-ws2b-selector.md), D-WS2b-7).
 
 **PF-32 Cada cambio se guarda solo** — `adaptar`
 No hay botón de guardar: cada control guarda al cambiar, y el nombre al perder

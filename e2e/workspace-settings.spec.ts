@@ -12,7 +12,14 @@ import {
 import { reportsNavLink } from "./reports-page";
 import { expect, test } from "./session";
 import {
+  DURATION_FORMAT_OPTIONS,
+  DURATION_FORMAT_TEXTS,
+  durationFormatControl,
+  durationFormatOption,
+  durationFormatOptions,
+  enterAsAdmin,
   FORBIDDEN_ROLE,
+  GENERAL_SECTION,
   generalSection,
   INACTIVE_BODY,
   inactiveNotice,
@@ -22,10 +29,13 @@ import {
   nameNotice,
   NETWORK_FAILURE,
   retryButton,
+  sectionHeadings,
   SETTINGS_LINK,
   SETTINGS_PATH,
   settingsHeading,
   settingsNavLink,
+  TIME_TRACKING_SECTION,
+  timeTrackingSection,
   WORKSPACE_NAME,
   workspaceHeaderName,
   workspaceNameField,
@@ -33,11 +43,13 @@ import {
 import { documentIsMarked, markDocument, trackerBar } from "./tracker-page";
 
 /*
- * §9.3 del contrato de WS1. Renombrar cambia el encabezado de toda la base
- * común, así que los recorridos de este archivo no corren a la vez entre sí.
- * Cada uno escribe un nombre propio y afirma solo el que escribió; el de
- * partida se lee de la base, porque es el que dejó el recorrido anterior o
- * una corrida anterior.
+ * §9.3 del contrato de WS1 y §9.3 del de WS2b. Renombrar cambia el encabezado
+ * de toda la base común, así que los recorridos de este archivo no corren a la
+ * vez entre sí. Cada uno escribe un nombre propio y afirma solo el que
+ * escribió; el de partida se lee de la base, porque es el que dejó el
+ * recorrido anterior o una corrida anterior. El formato de duración no se
+ * cambia acá: `chromium` corre con el compacto, y lo que lo escribe va en
+ * `duration-format.switch.spec.ts` (D-WS2b-12).
  */
 test.describe.configure({ mode: "serial" });
 
@@ -55,18 +67,6 @@ async function enterApp(page: Page): Promise<void> {
   await expect(trackerBar(page)).toBeVisible();
 }
 
-/**
- * La persona de la sesión pasa a admin, como `enterTeamAsAdmin`. La
- * navegación es del layout: la carga completa de `/` la dibuja con el rol
- * nuevo.
- */
-async function enterAsAdmin(page: Page, email: string): Promise<void> {
-  await enterApp(page);
-  await setRole(email, "admin");
-  await enterApp(page);
-  await expect(settingsNavLink(page)).toBeVisible();
-}
-
 /** Abre `/configuracion` y espera el campo con el nombre guardado. */
 async function openSettings(page: Page): Promise<string> {
   const saved = await workspaceNameOf();
@@ -75,11 +75,13 @@ async function openSettings(page: Page): Promise<string> {
   return saved;
 }
 
-/** WS-50 y WS-51: el título, sin la sección ni el campo. */
+/** WS-50 y WS-51: el título, sin ninguna de las dos secciones ni sus campos. */
 async function expectNoSettings(page: Page): Promise<void> {
   await expect(settingsHeading(page)).toBeVisible();
   await expect(generalSection(page)).toHaveCount(0);
   await expect(workspaceNameField(page)).toHaveCount(0);
+  await expect(timeTrackingSection(page)).toHaveCount(0);
+  await expect(durationFormatControl(page)).toHaveCount(0);
 }
 
 test("un admin renombra el workspace desde la navegación y el encabezado lo muestra sin recargar", async ({
@@ -121,6 +123,37 @@ test("un admin renombra el workspace desde la navegación y el encabezado lo mue
   await page.reload();
   await expect(workspaceNameField(page)).toHaveValue(renamed);
   await expect(workspaceHeaderName(page, renamed)).toBeVisible();
+});
+
+test("un admin ve «Registro de tiempo» con el formato del workspace, y elegir el mismo no manda nada", async ({
+  page,
+  email,
+}) => {
+  await enterAsAdmin(page, email);
+  await openSettings(page);
+
+  // WS-03, criterio 13: «General» y después «Registro de tiempo», con el
+  // selector adentro y el valor guardado, el compacto de `chromium`.
+  await expect(sectionHeadings(page)).toHaveText([
+    GENERAL_SECTION,
+    TIME_TRACKING_SECTION,
+  ]);
+  const control = durationFormatControl(timeTrackingSection(page));
+  await expect(control).toHaveText(DURATION_FORMAT_TEXTS.compact);
+
+  // WS-15: las dos opciones, el completo primero.
+  const sent = recordActions(page);
+  await control.click();
+  await expect(durationFormatOptions(page)).toHaveText([...DURATION_FORMAT_OPTIONS]);
+
+  // WS-04: elegir el que ya está cierra la lista sin mandar nada. El pedido
+  // saldría con el clic, antes de que la lista se cierre y de recargar.
+  await durationFormatOption(page, "compact").click();
+  await expect(page.getByRole("listbox")).toBeHidden();
+  await expect(control).toHaveText(DURATION_FORMAT_TEXTS.compact);
+  await page.reload();
+  await expect(durationFormatControl(page)).toHaveText(DURATION_FORMAT_TEXTS.compact);
+  expect(sent).toHaveLength(0);
 });
 
 test("salir del campo guarda, Esc descarta y el mismo nombre no manda nada", async ({

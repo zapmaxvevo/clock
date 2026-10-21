@@ -5,6 +5,7 @@ import {
   daysBetweenKeys,
   MINUTES_PER_DAY,
   truncatedHours,
+  type DurationFormat,
 } from "@/server/time";
 
 import type { ExportCell, ExportDocument, ExportRow } from "./types";
@@ -15,8 +16,29 @@ const EXCEL_EPOCH = "1899-12-30";
 const TEXT_FORMAT = "@";
 const DAY_FORMAT = "yyyy-mm-dd";
 const CLOCK_FORMAT = "hh:mm";
-/** Pasa de 24 h: una duración no es una hora del día. */
-const DURATION_FORMAT = "[h]:mm";
+const SECONDS_PER_DAY = MINUTES_PER_DAY * 60;
+/**
+ * El número de serie de una duración, la fracción de día, y su formato, que
+ * pasa de 24 h: una duración no es una hora del día. La celda guarda lo que
+ * muestra (D-R6-6): el compacto, los minutos truncados; el completo, los
+ * segundos.
+ */
+const DURATION_CELLS: Record<
+  DurationFormat,
+  { readonly serialOf: (seconds: number) => number; readonly numFmt: string }
+> = {
+  compact: {
+    serialOf: (seconds) => Math.floor(seconds / 60) / MINUTES_PER_DAY,
+    numFmt: "[h]:mm",
+  },
+  full: { serialOf: (seconds) => seconds / SECONDS_PER_DAY, numFmt: "[hh]:mm:ss" },
+};
+/**
+ * En caracteres: entra `99999:59:59`. Con el ancho por omisión, 8,43, Excel
+ * muestra `####` en una duración que no entra, con el completo desde las mil
+ * horas (D-WS2b-9).
+ */
+const DURATION_COLUMN_CHARS = 13;
 /** Excel lo muestra con el separador decimal de su configuración. */
 const HOURS_FORMAT = "0.00";
 
@@ -49,7 +71,7 @@ function clockMinutes(clock: string): number {
 }
 
 /** D-R6-12: el valor y el formato de cada celda; ninguna es una fórmula. */
-function valueOf(cell: ExportCell): XlsxValue {
+function valueOf(cell: ExportCell, durationFormat: DurationFormat): XlsxValue {
   switch (cell.kind) {
     case "text":
       return { value: xmlTextOf(cell.text), numFmt: TEXT_FORMAT };
@@ -59,8 +81,10 @@ function valueOf(cell: ExportCell): XlsxValue {
       return { value: daysBetweenKeys(EXCEL_EPOCH, cell.dayKey), numFmt: DAY_FORMAT };
     case "clock":
       return { value: clockMinutes(cell.clock) / MINUTES_PER_DAY, numFmt: CLOCK_FORMAT };
-    case "duration":
-      return { value: cell.minutes / MINUTES_PER_DAY, numFmt: DURATION_FORMAT };
+    case "duration": {
+      const { serialOf, numFmt } = DURATION_CELLS[durationFormat];
+      return { value: serialOf(cell.seconds), numFmt };
+    }
     case "hours":
       // Lo que se ve y lo que suma una planilla no pasan el total (D-R6-6).
       return { value: truncatedHours(cell.minutes), numFmt: HOURS_FORMAT };
@@ -69,10 +93,15 @@ function valueOf(cell: ExportCell): XlsxValue {
   }
 }
 
-function addRow(sheet: Worksheet, row: ExportRow, bold = false): void {
+function addRow(
+  sheet: Worksheet,
+  row: ExportRow,
+  durationFormat: DurationFormat,
+  bold = false,
+): void {
   const added = sheet.addRow([]);
   row.forEach((cell, index) => {
-    const { value, numFmt } = valueOf(cell);
+    const { value, numFmt } = valueOf(cell, durationFormat);
     const target = added.getCell(index + 1);
     target.value = value;
     if (numFmt !== undefined) {
@@ -84,10 +113,20 @@ function addRow(sheet: Worksheet, row: ExportRow, bold = false): void {
   });
 }
 
+/** Los números de columna, desde 1, con al menos una duración en `rows`. */
+function durationColumnsOf(rows: readonly ExportRow[]): ReadonlySet<number> {
+  return new Set(
+    rows.flatMap((row) =>
+      row.flatMap((cell, index) => (cell.kind === "duration" ? [index + 1] : [])),
+    ),
+  );
+}
+
 /**
  * D-R6-12: dos hojas, cada una con la cabecera, una fila vacía y su tabla,
  * con la primera fila de la tabla en negrita: sus encabezados o, si la
- * sección es un aviso, el aviso. Solo escribe.
+ * sección es un aviso, el aviso. Cada columna con una duración, con el ancho
+ * que la deja entera. Solo escribe.
  */
 export async function xlsxBytesOf(
   document: ExportDocument,
@@ -96,10 +135,15 @@ export async function xlsxBytesOf(
   for (const section of document.sections) {
     const sheet = workbook.addWorksheet(section.title);
     for (const row of document.header) {
-      addRow(sheet, row);
+      addRow(sheet, row, document.durationFormat);
     }
     sheet.addRow([]);
-    section.rows.forEach((row, index) => addRow(sheet, row, index === 0));
+    section.rows.forEach((row, index) =>
+      addRow(sheet, row, document.durationFormat, index === 0),
+    );
+    for (const column of durationColumnsOf([...document.header, ...section.rows])) {
+      sheet.getColumn(column).width = DURATION_COLUMN_CHARS;
+    }
   }
   // `writeBuffer` da un `Buffer` de Node, que puede ser una vista de un
   // `ArrayBuffer` más grande: la copia es un `ArrayBuffer` propio.

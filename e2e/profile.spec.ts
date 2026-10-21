@@ -4,6 +4,7 @@ import { addDays, dayLabel, todayIn, type CivilDay } from "./days";
 import { dropActionRequests, withServerAction } from "./network";
 import { isProfilePage, nameField } from "./profile-page";
 import { expect, PERSON_NAME, test } from "./session";
+import { DURATION_FORMAT_TEXTS } from "./settings-page";
 import {
   accountMenu,
   accountMenuButton,
@@ -194,7 +195,7 @@ test("el menú de la cuenta lleva al perfil, que muestra la identidad y los pred
   await expect(main.getByText("Lunes", { exact: true })).toBeVisible();
   await expect(main.getByText("Lo administra el equipo.")).toBeVisible();
   await expect(main.getByText("Formato de duración")).toBeVisible();
-  await expect(main.getByText("Compacto (h:mm)")).toBeVisible();
+  await expect(main.getByText(DURATION_FORMAT_TEXTS.compact)).toBeVisible();
   await expect(main.getByText("Lo define el workspace.")).toBeVisible();
   await expect(main.getByRole("combobox")).toHaveCount(4);
 });

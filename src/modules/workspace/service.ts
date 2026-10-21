@@ -33,6 +33,7 @@ import {
 import {
   workspaceRepository,
   type MembershipRow,
+  type SettingsColumn,
   type WorkspaceRead,
   type WorkspaceRow,
 } from "./repository";
@@ -47,11 +48,11 @@ import {
   type RevokeInvitationResult,
   type UpdateWorkspaceNameInput,
   type UpdateWorkspaceNameResult,
+  type UpdateWorkspaceSettingInput,
+  type UpdateWorkspaceSettingResult,
+  type WorkspaceSettings,
   type WorkspaceSettingsView,
 } from "./schema";
-
-/** Los ajustes del workspace que se leen en cada pedido (ADR 0029). */
-export type WorkspaceSettings = { readonly durationFormat: DurationFormat };
 
 export type WorkspaceContext = {
   readonly workspace: WorkspaceRow;
@@ -568,17 +569,33 @@ export function canUpdateWorkspaceSettings(actor: Actor): boolean {
   });
 }
 
-/** D-WS1-5: sin consultas; el nombre es el de la sesión. */
-export function getWorkspaceSettingsView(
+/** WS-73: la fila de ajustes que `createWorkspace` crea y nadie borra. */
+const MISSING_SETTINGS = "Falta la fila de ajustes del workspace.";
+
+/**
+ * D-WS2b-4, WS-61, WS-63, WS-73: sin permiso, `forbidden` sin consultar; con
+ * permiso, lee la fila de ajustes y lanza si falta, sin crearla. El nombre es
+ * el de la sesión. No lee el formato de la sesión, que resuelve la fila que
+ * falta como `compact`: esta pantalla es la que tiene que ver la falta.
+ */
+export async function getWorkspaceSettingsView(
   context: WorkspaceContext,
-): WorkspaceSettingsView {
+): Promise<WorkspaceSettingsView> {
   if (!canUpdateWorkspaceSettings(context.actor)) {
     return {
       kind: "forbidden",
       reason: context.actor.status === "active" ? "role" : "inactive",
     };
   }
-  return { kind: "ready", name: context.workspace.name };
+  const row = await workspaceRepository.findWorkspaceSettings(context.workspace.id);
+  if (row === undefined) {
+    throw new Error(MISSING_SETTINGS);
+  }
+  return {
+    kind: "ready",
+    name: context.workspace.name,
+    durationFormat: resolveDurationFormat(row.durationFormat),
+  };
 }
 
 /**
@@ -615,5 +632,72 @@ export async function updateWorkspaceName(
       nextValue: { name: input.name },
     });
     return result;
+  });
+}
+
+/** Lo que pide un cambio de ajuste: la columna de su clave antes y después. */
+type SettingChange = {
+  readonly previous: SettingsColumn;
+  readonly next: SettingsColumn;
+  readonly unchanged: boolean;
+};
+
+/**
+ * La clave del pedido sobre los ajustes guardados. El `switch` es exhaustivo:
+ * E4 suma el caso de `weekStart`, con su comparación y su constancia.
+ */
+function settingChangeOf(
+  input: UpdateWorkspaceSettingInput,
+  current: WorkspaceSettings,
+): SettingChange {
+  switch (input.key) {
+    case "durationFormat":
+      return {
+        previous: { durationFormat: current.durationFormat },
+        next: { durationFormat: input.value },
+        unchanged: current.durationFormat === input.value,
+      };
+  }
+}
+
+/**
+ * WS-04, WS-14, WS-56, WS-65, WS-73: D-WS2b-1 y D-WS2b-3. El mismo valor no
+ * escribe. Sin la fila de ajustes, lanza sin crearla: un ajuste que aparece
+ * con valores de omisión ocultaría el problema. Deja `workspace.updateSetting`
+ * con el anterior y el nuevo de la clave del pedido.
+ */
+export async function updateWorkspaceSetting(
+  actor: Actor,
+  input: UpdateWorkspaceSettingInput,
+): Promise<UpdateWorkspaceSettingResult> {
+  if (!canUpdateWorkspaceSettings(actor)) {
+    throw new ForbiddenError("workspace.settings.update");
+  }
+  return db.transaction(async (tx) => {
+    // Primero la membresía y después la fila de ajustes: E3 toma los dos en el
+    // mismo orden (D-WS1-3).
+    await assertCanUpdateSettingsLocked(tx, actor);
+    const row = await workspaceRepository.lockWorkspaceSettings(tx, actor.workspaceId);
+    if (row === undefined) {
+      throw new Error(MISSING_SETTINGS);
+    }
+    const current: WorkspaceSettings = {
+      durationFormat: resolveDurationFormat(row.durationFormat),
+    };
+    const { previous, next, unchanged } = settingChangeOf(input, current);
+    // WS-04: también lo que hace inofensivo reintentar (WS-62).
+    if (unchanged) {
+      return { settings: current };
+    }
+    await workspaceRepository.updateWorkspaceSettings(tx, actor.workspaceId, next);
+    await recordAudit(tx, {
+      ...auditActorOf(actor),
+      action: "workspace.updateSetting",
+      entity: "workspace_settings",
+      entityId: actor.workspaceId,
+      previousValue: previous,
+      nextValue: next,
+    });
+    return { settings: { ...current, ...next } };
   });
 }

@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { ReportGroup } from "@/modules/report/schema";
+import type { DurationFormat } from "@/server/time";
 
 import { ReportTreeRows } from "./report-tree";
 import { visibleRows, type VisibleRow } from "./report-tree-model";
@@ -35,11 +36,18 @@ const groups: ReportGroup[] = [
   },
 ];
 
-function render(rows: readonly VisibleRow[]): string {
+function render(
+  rows: readonly VisibleRow[],
+  durationFormat: DurationFormat = "compact",
+): string {
   return renderToStaticMarkup(
     <table>
       <tbody>
-        <ReportTreeRows rows={rows} onToggle={() => undefined} />
+        <ReportTreeRows
+          rows={rows}
+          onToggle={() => undefined}
+          durationFormat={durationFormat}
+        />
       </tbody>
     </table>,
   );
@@ -197,5 +205,32 @@ describe("ReportTreeRows (D-R3-9, §5.4)", () => {
     expect(headings[1]).toContain(
       '<span class="text-muted-foreground">solo 28/09 – 30/09</span>',
     );
+  });
+});
+
+describe("ReportTreeRows con el formato del workspace (D-WS2b-8, WS-17)", () => {
+  /** La duración de cada fila. */
+  function durations(markup: string): string[] {
+    return [...markup.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map(([, cell]) => textOf(cell));
+  }
+
+  it.each<[DurationFormat, string]>([
+    ["compact", "0:01"],
+    ["full", "00:01:40"],
+  ])("con el %s, una fila de 100 segundos dice %s", (format, shown) => {
+    const rows = visibleRows(
+      [{ kind: "tag", tag: { id: E1, name: "E1" }, seconds: 100 }],
+      new Set(),
+    );
+    expect(durations(render(rows, format))).toEqual([shown]);
+  });
+
+  it("con el completo, cada fila abierta en hh:mm:ss", () => {
+    expect(durations(render(openRows(), "full"))).toEqual([
+      "01:30:00",
+      "01:00:00",
+      "01:00:00",
+      "00:30:00",
+    ]);
   });
 });

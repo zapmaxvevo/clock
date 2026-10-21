@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { DurationFormat } from "@/server/time";
+
 import { csvBytesOf } from "./csv";
 import type { ExportCell, ExportDocument } from "./types";
 
@@ -15,10 +17,11 @@ function text(value: string): ExportCell {
 }
 
 /** El campo de una celda sola en una fila, sin el BOM ni el fin de línea. */
-function fieldOf(cell: ExportCell): string {
+function fieldOf(cell: ExportCell, durationFormat: DurationFormat = "compact"): string {
   const document: ExportDocument = {
     header: [[cell]],
     chart: null,
+    durationFormat,
     sections: [],
   };
   return textOf(csvBytesOf(document)).slice(1, -2);
@@ -32,11 +35,12 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
         [text("Zona horaria"), text("America/Argentina/Buenos_Aires")],
         [
           text("Total"),
-          { kind: "duration", minutes: 90 },
+          { kind: "duration", seconds: 5400 },
           { kind: "hours", minutes: 90 },
         ],
       ],
       chart: null,
+      durationFormat: "compact",
       sections: [
         {
           title: "Resumen",
@@ -45,7 +49,7 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
             [
               { kind: "integer", value: 1 },
               text("Ana"),
-              { kind: "duration", minutes: 90 },
+              { kind: "duration", seconds: 5400 },
               { kind: "hours", minutes: 90 },
             ],
           ],
@@ -104,9 +108,29 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
     expect(fieldOf(text("'x"))).toBe(`"'x"`);
   });
 
+  it("con el completo, la duración en `hh:mm:ss` y las horas iguales (D-WS2b-9)", () => {
+    expect(fieldOf({ kind: "duration", seconds: 100 })).toBe('"0:01"');
+    expect(fieldOf({ kind: "duration", seconds: 100 }, "full")).toBe('"00:01:40"');
+    expect(fieldOf({ kind: "hours", minutes: 1 }, "full")).toBe('"0,01"');
+  });
+
+  it("el formato del documento vale para la cabecera y para cada sección", () => {
+    const duration: ExportCell = { kind: "duration", seconds: 100 };
+    const document: ExportDocument = {
+      header: [[text("Total"), duration]],
+      chart: null,
+      durationFormat: "full",
+      sections: [{ title: "Resumen", rows: [[text("Ana"), duration]] }],
+    };
+
+    expect(textOf(csvBytesOf(document))).toBe(
+      '\uFEFF"Total";"00:01:40"\r\n\r\n"Resumen"\r\n"Ana";"00:01:40"\r\n',
+    );
+  });
+
   it("escribe cada tipo de celda", () => {
-    expect(fieldOf({ kind: "duration", minutes: 90 })).toBe('"1:30"');
-    expect(fieldOf({ kind: "duration", minutes: 120_000 })).toBe('"2000:00"');
+    expect(fieldOf({ kind: "duration", seconds: 5400 })).toBe('"1:30"');
+    expect(fieldOf({ kind: "duration", seconds: 7_200_000 })).toBe('"2000:00"');
     expect(fieldOf({ kind: "hours", minutes: 89 })).toBe('"1,48"');
     expect(fieldOf({ kind: "hours", minutes: 1 })).toBe('"0,01"');
     expect(fieldOf({ kind: "day", dayKey: "2026-10-01" })).toBe('"2026-10-01"');

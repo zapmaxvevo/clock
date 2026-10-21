@@ -5,8 +5,9 @@ import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 import type { ReportGroup } from "@/modules/report/schema";
+import { formatDuration, type DurationFormat } from "@/server/time";
 
-import { durationLabel, GroupHeading } from "./group-heading";
+import { GroupHeading } from "./group-heading";
 import { visibleRows, type VisibleRow } from "./report-tree-model";
 
 /** La sangría de cada nivel: la única marca visual del nivel (D-R3-9). */
@@ -18,7 +19,13 @@ const LEVEL_INDENT: Record<number, string> = { 1: "", 2: "pl-6", 3: "pl-12" };
  * solo los grupos, no el estado entero (§5.4), y quien la monta le pone como
  * `key` el `href` del pedido, así cada navegación vuelve a empezar contraída.
  */
-export function ReportTree({ groups }: { readonly groups: readonly ReportGroup[] }) {
+export function ReportTree({
+  groups,
+  durationFormat,
+}: {
+  readonly groups: readonly ReportGroup[];
+  readonly durationFormat: DurationFormat;
+}) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
 
   function toggle(key: string): void {
@@ -31,16 +38,24 @@ export function ReportTree({ groups }: { readonly groups: readonly ReportGroup[]
     });
   }
 
-  return <ReportTreeRows rows={visibleRows(groups, open)} onToggle={toggle} />;
+  return (
+    <ReportTreeRows
+      rows={visibleRows(groups, open)}
+      onToggle={toggle}
+      durationFormat={durationFormat}
+    />
+  );
 }
 
 /** Las filas que se ven, sin el estado de lo abierto. */
 export function ReportTreeRows({
   rows,
   onToggle,
+  durationFormat,
 }: {
   readonly rows: readonly VisibleRow[];
   readonly onToggle: (key: string) => void;
+  readonly durationFormat: DurationFormat;
 }) {
   // Con más de un nivel, los grupos del primero siempre se ven y se pueden
   // abrir; entonces las hojas dejan el lugar del chevrón para alinear.
@@ -51,7 +66,7 @@ export function ReportTreeRows({
         <RowHeading row={row} nested={nested} onToggle={() => onToggle(row.key)} />
       </th>
       <td className="px-3 py-2 text-right tabular-nums">
-        {durationLabel(row.group.seconds)}
+        {formatDuration(row.group.seconds, durationFormat)}
       </td>
     </tr>
   ));

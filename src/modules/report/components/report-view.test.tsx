@@ -6,8 +6,10 @@ import {
   type ReportGroup,
   type ReportReadyState,
 } from "@/modules/report/schema";
+import type { DurationFormat } from "@/server/time";
 import { bodyRows } from "@/test/markup";
 
+import { durationColumnWidth } from "./duration-column";
 import { REPORT_HEADING_ID, ReportView } from "./report-view";
 
 const week = { first: "2026-10-05", last: "2026-10-11" };
@@ -42,8 +44,13 @@ const state: ReportReadyState = {
   chart: null,
 };
 
-function render(overrides: Partial<ReportReadyState>): string {
-  return renderToStaticMarkup(<ReportView state={{ ...state, ...overrides }} />);
+function render(
+  overrides: Partial<ReportReadyState>,
+  durationFormat: DurationFormat = "compact",
+): string {
+  return renderToStaticMarkup(
+    <ReportView state={{ ...state, ...overrides }} durationFormat={durationFormat} />,
+  );
 }
 
 /** El encabezado de cada fila del cuerpo, con sus etiquetas. */
@@ -981,4 +988,88 @@ describe("ReportView con las personas sin horas (D-R9-9, D-R9-12)", () => {
     expect(bruno).not.toContain("<button");
     expect(bruno).toMatch(/<span aria-hidden="true"[^>]*><\/span>/);
   });
+});
+
+describe("ReportView con el formato del workspace (D-WS2b-8, WS-17)", () => {
+  /** Dos filas de 100 segundos, una facturable. */
+  const groups: ReportGroup[] = [
+    { kind: "person", userId: "u1", name: "Ana", inactive: false, seconds: 100 },
+    { kind: "person", userId: "u2", name: "Bruno", inactive: false, seconds: 100 },
+  ];
+  const chart: NonNullable<ReportReadyState["chart"]> = {
+    granularity: "date",
+    bars: [
+      {
+        firstDay: "2026-10-05",
+        label: "lun, 05/10",
+        partial: null,
+        tick: "05/10",
+        seconds: 200,
+      },
+    ],
+  };
+  const overrides: Partial<ReportReadyState> = {
+    scope: "everyone",
+    groups,
+    totalSeconds: 200,
+    billableSeconds: 100,
+    chart,
+  };
+
+  /** La tabla del reporte, sin la de datos del gráfico que va antes. */
+  function reportTable(markup: string): string {
+    return markup.slice(markup.indexOf(`<table aria-labelledby="${REPORT_HEADING_ID}"`));
+  }
+
+  /** La tabla de datos del gráfico. */
+  function chartTable(markup: string): string {
+    return markup.slice(markup.indexOf("<details"), markup.indexOf("</details>"));
+  }
+
+  it.each<[DurationFormat, string, string, string]>([
+    ["compact", "0:01", "0:03", "0:01"],
+    ["full", "00:01:40", "00:03:20", "00:01:40"],
+  ])(
+    "con el %s, las filas, el total y el facturable en su formato",
+    (format, row, total, billable) => {
+      const markup = render(overrides, format);
+      expect(bodyRows(reportTable(markup))).toEqual([
+        ["Ana", row],
+        ["Bruno", row],
+      ]);
+      expect(totals(markup)).toEqual({ Total: total, Facturable: billable });
+    },
+  );
+
+  it.each<[DurationFormat, string]>([
+    ["compact", "0:03"],
+    ["full", "00:03:20"],
+  ])(
+    "con el %s, el gráfico recibe el formato: la tabla de datos en %s",
+    (format, bar) => {
+      expect(bodyRows(chartTable(render(overrides, format)))).toEqual([
+        ["lun, 05/10", bar],
+      ]);
+    },
+  );
+
+  it("el ancho de «Duración»: w-24 con el compacto y uno mayor con el completo", () => {
+    expect(durationColumnWidth("compact")).toBe("w-24");
+    expect(durationColumnWidth("full")).toBe("w-28");
+  });
+
+  it.each<DurationFormat>(["compact", "full"])(
+    "con el %s, las dos tablas llevan el ancho de su formato en «Duración»",
+    (format) => {
+      const markup = render(overrides, format);
+      const width = durationColumnWidth(format);
+      const heading = new RegExp(`<th scope="col" class="([^"]*)">Duración</th>`, "g");
+      const classes = [...markup.matchAll(heading)].map(([, names]) => names.split(" "));
+      expect(classes).toHaveLength(2);
+      for (const names of classes) {
+        expect(names).toContain(width);
+        expect(names.filter((name) => /^w-/.test(name))).toEqual([width]);
+      }
+    },
+  );
 });

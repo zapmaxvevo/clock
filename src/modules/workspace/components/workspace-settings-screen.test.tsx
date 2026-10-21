@@ -5,6 +5,7 @@ import type {
   WorkspaceSettingsActions,
   WorkspaceSettingsView,
 } from "@/modules/workspace/schema";
+import type { DurationFormat } from "@/server/time";
 import { textOf } from "@/test/markup";
 
 import { WorkspaceSettingsScreen } from "./workspace-settings-screen";
@@ -13,13 +14,19 @@ import { WorkspaceSettingsScreen } from "./workspace-settings-screen";
 const actions: WorkspaceSettingsActions = {
   updateWorkspaceName: () =>
     Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
+  updateWorkspaceSetting: () =>
+    Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
 };
 
 function render(view: WorkspaceSettingsView): string {
   return renderToStaticMarkup(<WorkspaceSettingsScreen view={view} actions={actions} />);
 }
 
-const ready: WorkspaceSettingsView = { kind: "ready", name: "Estudio Norte" };
+const ready: WorkspaceSettingsView = {
+  kind: "ready",
+  name: "Estudio Norte",
+  durationFormat: "compact",
+};
 
 /** Las secciones de la pantalla, cada una con su apertura y su contenido. */
 function sectionsOf(markup: string): string[] {
@@ -27,16 +34,47 @@ function sectionsOf(markup: string): string[] {
 }
 
 describe("WorkspaceSettingsScreen", () => {
-  it("lista: el título y una sola sección, «General», nombrada por su `<h2>`", () => {
+  it("lista: el título y dos secciones, «General» y «Registro de tiempo», en ese orden (WS-03)", () => {
     const markup = render(ready);
     const sections = sectionsOf(markup);
 
     expect(markup).toMatch(/<h1[^>]*>Configuración del workspace<\/h1>/);
-    expect(sections).toHaveLength(1);
+    expect(sections).toHaveLength(2);
     expect(sections[0]).toMatch(/^<section aria-labelledby="workspace-settings-general"/);
     expect(sections[0]).toMatch(/<h2 id="workspace-settings-general"[^>]*>General<\/h2>/);
-    expect(markup.match(/<h2/g)).toHaveLength(1);
+    expect(sections[1]).toMatch(
+      /^<section aria-labelledby="workspace-settings-time-tracking"/,
+    );
+    expect(sections[1]).toMatch(
+      /<h2 id="workspace-settings-time-tracking"[^>]*>Registro de tiempo<\/h2>/,
+    );
+    expect(
+      [...markup.matchAll(/<h2[^>]*>(.*?)<\/h2>/g)].map(([, title]) => title),
+    ).toEqual(["General", "Registro de tiempo"]);
   });
+
+  it.each<[DurationFormat, string]>([
+    ["compact", "Compacto (h:mm)"],
+    ["full", "Completo (hh:mm:ss)"],
+  ])(
+    "lista: «Registro de tiempo» tiene el selector «Formato de duración» con el %s guardado (WS-15, WS-63)",
+    (durationFormat, shown) => {
+      const [, timeTracking] = sectionsOf(render({ ...ready, durationFormat }));
+      const id = timeTracking?.match(
+        /<label[^>]*for="([^"]+)"[^>]*>Formato de duración<\/label>/,
+      )?.[1];
+      const triggers =
+        timeTracking?.match(/<button[^>]*role="combobox"[^>]*>.*?<\/button>/g) ?? [];
+
+      expect(id).toBeDefined();
+      expect(triggers).toHaveLength(1);
+      expect(triggers[0]).toContain(`id="${id ?? ""}"`);
+      expect(textOf(triggers[0] ?? "")).toBe(shown);
+      expect(textOf(timeTracking ?? "")).not.toContain(
+        "No se pudo cambiar el formato de duración.",
+      );
+    },
+  );
 
   it("lista: «General» tiene el campo «Nombre del workspace» con el guardado, que corta en 100", () => {
     const [general] = sectionsOf(render(ready));
@@ -73,6 +111,7 @@ describe("WorkspaceSettingsScreen", () => {
     );
     expect(text).not.toContain("Tu acceso al workspace está desactivado.");
     expect(markup).not.toContain("<input");
+    expect(markup).not.toContain('role="combobox"');
     expect(markup).not.toContain("<section");
   });
 
@@ -87,6 +126,7 @@ describe("WorkspaceSettingsScreen", () => {
       "No tenés permiso para cambiar la configuración del workspace.",
     );
     expect(markup).not.toContain("<input");
+    expect(markup).not.toContain('role="combobox"');
     expect(markup).not.toContain("<section");
   });
 });

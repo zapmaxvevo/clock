@@ -20,9 +20,16 @@ import {
   PERSON_TIMEZONE,
 } from "./calendar-page";
 import { seedPersonEntries, seedProject, seedRunningEntry } from "./database";
-import { addDays, minuteOfDayIn, todayIn, weekStartOf, type CivilDay } from "./days";
+import { addDays, weekStartOf } from "./days";
+import { COUNTER, FULL_TOTAL, skipNearMidnight, today } from "./duration-format";
 import { holdActionResponses, recordActions, withServerAction } from "./network";
 import { expect, test } from "./session";
+import {
+  DURATION_FORMAT_TEXTS,
+  durationFormatControl,
+  enterAsAdmin,
+  SETTINGS_PATH,
+} from "./settings-page";
 import {
   cellDetailDialog,
   cellField,
@@ -68,41 +75,13 @@ import {
  * una persona propia y siembra entradas con segundos sueltos —100 segundos son
  * `0:01` en el compacto y `00:01:40` en el completo—, así un lugar que formatee
  * en minutos o con el compacto falla. El contador del timer no es una
- * duración: sigue en `h:mm:ss` sin relleno (PF-22, WS-66).
+ * duración: sigue en `h:mm:ss` sin relleno (PF-22, WS-66). Al final, el perfil
+ * y `/configuracion` dicen el formato del workspace (§9.4 del contrato de
+ * WS2b); el reporte y las descargas están en `reports-duration.full.spec.ts`.
  */
-
-/** El total de un grupo o del período en el completo, con su etiqueta. */
-const FULL_TOTAL = /^Total \d{2,}:\d{2}:\d{2}$/;
-
-/** El contador del timer: las horas sin relleno, con los dos formatos (PF-22). */
-const COUNTER = /^0:\d{2}:\d{2}$/;
 
 /** El bloque del timer en el calendario: su transcurrido como duración (CAL-21). */
 const RUNNING_DURATION = /en curso · \d{2}:\d{2}:\d{2}$/;
-
-/**
- * Minutos del comienzo del día en que los recorridos con timer no corren: el
- * timer sembrado empezó hace diez minutos, y las entradas de hoy van de las
- * 00:00 a las 00:06:40. Al final del día, el transcurrido pasaría al siguiente.
- */
-const DAY_START_MARGIN_MINUTES = 15;
-const DAY_END_MARGIN_MINUTES = 5;
-
-/** El motivo del salto cerca de la medianoche. */
-const NEAR_MIDNIGHT_REASON =
-  "cerca de la medianoche el timer sembrado y las entradas de hoy no caen en el mismo día";
-
-function today(): CivilDay {
-  return todayIn(PERSON_TIMEZONE);
-}
-
-function skipNearMidnight(): void {
-  const minute = minuteOfDayIn(PERSON_TIMEZONE);
-  test.skip(
-    minute < DAY_START_MARGIN_MINUTES || minute > 1440 - DAY_END_MARGIN_MINUTES,
-    NEAR_MIDNIGHT_REASON,
-  );
-}
 
 /**
  * El total de un grupo del rastreador o del período del calendario. El de una
@@ -442,4 +421,23 @@ test("el bloque del timer en el calendario avanza en el completo y su diálogo s
   await expect(elapsedCounter(dialog)).toHaveText(COUNTER);
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
+});
+
+test("el perfil muestra el formato del workspace, el completo", async ({ page }) => {
+  await page.goto("/perfil");
+
+  // PF-31, criterio 12: el valor del workspace, que la persona no cambia.
+  const main = page.getByRole("main");
+  await expect(main.getByText("Formato de duración", { exact: true })).toBeVisible();
+  await expect(main.getByText(DURATION_FORMAT_TEXTS.full, { exact: true })).toBeVisible();
+  await expect(main.getByText(DURATION_FORMAT_TEXTS.compact)).toHaveCount(0);
+  await expect(main.getByText("Lo define el workspace.", { exact: true })).toBeVisible();
+});
+
+test("en /configuracion el selector dice el completo", async ({ page, email }) => {
+  await enterAsAdmin(page, email);
+
+  // WS-63, criterio 13: el valor guardado, leído de la fila de ajustes.
+  await page.goto(SETTINGS_PATH);
+  await expect(durationFormatControl(page)).toHaveText(DURATION_FORMAT_TEXTS.full);
 });

@@ -1,4 +1,6 @@
+import { cn } from "@/lib/utils";
 import type { ReportChart as ReportChartState } from "@/modules/report/schema";
+import { formatDuration, type DurationFormat } from "@/server/time";
 
 import { ChartBars, type ChartBarView } from "./chart-bars";
 import {
@@ -7,16 +9,23 @@ import {
   tickAlignOf,
   tickIndexesOf,
 } from "./chart-model";
-import { durationLabel, PartialHeading } from "./group-heading";
+import { durationColumnWidth } from "./duration-column";
+import { PartialHeading } from "./group-heading";
 import { chartCaptions, groupByLabels, reportLabels } from "./labels";
 
 /**
  * RP-15, D-R5-7 a D-R5-9: el gráfico de barras, nombrado por su leyenda. Arma
  * la escala, los nombres, las alturas y las marcas y se los pasa a
  * `ChartBars`, que solo dibuja e interactúa; debajo, la tabla de datos, que se
- * abre sin JavaScript.
+ * abre sin JavaScript. Las duraciones, con el formato del workspace (D-WS2b-8).
  */
-export function ReportChart({ chart }: { readonly chart: ReportChartState }) {
+export function ReportChart({
+  chart,
+  durationFormat,
+}: {
+  readonly chart: ReportChartState;
+  readonly durationFormat: DurationFormat;
+}) {
   const scale = chartScaleOf(chart.bars);
   const ticks = new Set(tickIndexesOf(chart.bars.length));
   const bars = chart.bars.map((bar, index): ChartBarView => ({
@@ -25,7 +34,7 @@ export function ReportChart({ chart }: { readonly chart: ReportChartState }) {
       bar.partial === null
         ? bar.label
         : `${bar.label} ${reportLabels.partialDays(bar.partial)}`,
-      durationLabel(bar.seconds),
+      formatDuration(bar.seconds, durationFormat),
     ),
     heightPercent: barHeightPercent(bar.seconds, scale),
     hasHours: bar.seconds > 0,
@@ -40,7 +49,7 @@ export function ReportChart({ chart }: { readonly chart: ReportChartState }) {
       </figcaption>
       <ChartBars
         scale={scale.lines.map((seconds) => ({
-          label: durationLabel(seconds),
+          label: formatDuration(seconds, durationFormat),
           percent: barHeightPercent(seconds, scale),
         }))}
         bars={bars}
@@ -56,7 +65,13 @@ export function ReportChart({ chart }: { readonly chart: ReportChartState }) {
                 <th scope="col" className="px-3 py-2 text-left font-medium">
                   {groupByLabels[chart.granularity]}
                 </th>
-                <th scope="col" className="w-24 px-3 py-2 text-right font-medium">
+                <th
+                  scope="col"
+                  className={cn(
+                    durationColumnWidth(durationFormat),
+                    "px-3 py-2 text-right font-medium",
+                  )}
+                >
                   {reportLabels.duration}
                 </th>
               </tr>
@@ -68,7 +83,7 @@ export function ReportChart({ chart }: { readonly chart: ReportChartState }) {
                     <PartialHeading partial={bar.partial}>{bar.label}</PartialHeading>
                   </th>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {durationLabel(bar.seconds)}
+                    {formatDuration(bar.seconds, durationFormat)}
                   </td>
                 </tr>
               ))}

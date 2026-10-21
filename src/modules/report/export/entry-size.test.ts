@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { DurationFormat } from "@/server/time";
+
 import { csvBytesOf } from "./csv";
 import { entriesMinBytes } from "./entry-size";
 import type { ExportCell, ExportDocument } from "./types";
@@ -9,10 +11,12 @@ function text(value: string): ExportCell {
 }
 
 describe("entriesMinBytes (S1, S2 de las revisiones de R6a, B4)", () => {
-  it("una línea de «Entradas» sin textos pesa en el CSV escrito lo fijo de cada línea", () => {
-    const document: ExportDocument = {
+  /** Una línea de «Entradas» sin textos, de cero segundos, en el formato pedido. */
+  function bareLine(durationFormat: DurationFormat): ExportDocument {
+    return {
       header: [],
       chart: null,
+      durationFormat,
       sections: [
         {
           title: "",
@@ -29,18 +33,28 @@ describe("entriesMinBytes (S1, S2 de las revisiones de R6a, B4)", () => {
               { kind: "empty" },
               { kind: "empty" },
               text("No"),
-              { kind: "duration", minutes: 0 },
+              { kind: "duration", seconds: 0 },
               { kind: "hours", minutes: 0 },
             ],
           ],
         },
       ],
     };
-    // El BOM (3), la línea vacía (2) y el título vacío (4) van antes de la fila.
-    const lineBytes = csvBytesOf(document).byteLength - 3 - 2 - 4;
-    expect(
-      entriesMinBytes({ entries: 1, textBytes: 0, tagLinks: 0, taggedEntries: 0 }),
-    ).toBe(lineBytes);
+  }
+
+  /** El BOM (3), la línea vacía (2) y el título vacío (4) van antes de la fila. */
+  function lineBytesOf(document: ExportDocument): number {
+    return csvBytesOf(document).byteLength - 3 - 2 - 4;
+  }
+
+  const bare = { entries: 1, textBytes: 0, tagLinks: 0, taggedEntries: 0 };
+
+  it("una línea de «Entradas» sin textos pesa en el CSV escrito lo fijo de cada línea", () => {
+    expect(entriesMinBytes(bare)).toBe(lineBytesOf(bareLine("compact")));
+  });
+
+  it("con el completo, la cota sigue debajo del CSV escrito (D-WS2b-9)", () => {
+    expect(entriesMinBytes(bare)).toBeLessThan(lineBytesOf(bareLine("full")));
   });
 
   it("suma los textos y un «, » menos que las etiquetas de cada entrada", () => {

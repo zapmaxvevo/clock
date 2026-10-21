@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import type { DurationFormat } from "@/server/time";
 import { PAGE_MARGIN, pdfFacts, pdfPageTexts } from "@/test/pdf";
 import { octoberByDay } from "@/test/report";
 
@@ -29,7 +30,7 @@ function row(level: number, labels: readonly string[]): ExportRow {
       const label = labels[index];
       return label === undefined ? empty : text(label);
     }),
-    { kind: "duration", minutes: 90 },
+    { kind: "duration", seconds: 5400 },
     { kind: "hours", minutes: 90 },
   ];
 }
@@ -46,15 +47,20 @@ function documentOf(rows: readonly ExportRow[]): ExportDocument {
       [text("Zona horaria"), text("America/Argentina/Buenos_Aires")],
       [text("Alcance"), text("Todas las personas del workspace")],
       [text("Agrupado por"), text("Persona / Proyecto / Fecha")],
-      [text("Total"), { kind: "duration", minutes: 59 }, { kind: "hours", minutes: 59 }],
+      [
+        text("Total"),
+        { kind: "duration", seconds: 3540 },
+        { kind: "hours", minutes: 59 },
+      ],
       [
         text("Facturable"),
-        { kind: "duration", minutes: 30 },
+        { kind: "duration", seconds: 1800 },
         { kind: "hours", minutes: 30 },
       ],
       [text("Generado"), text("08/10/2026 12:00")],
     ],
     chart: null,
+    durationFormat: "compact",
     sections: [
       {
         title: "Resumen",
@@ -240,6 +246,56 @@ function withNotes(count: number): ExportDocument {
   ]);
   return withChart({ ...small, header: [...small.header, ...notes] });
 }
+
+/** Un resumen de una fila, la de Ana con `seconds`, en el formato pedido. */
+function oneRowIn(durationFormat: DurationFormat, seconds: number): ExportDocument {
+  const [headings] = documentOf([]).sections[0]?.rows ?? [];
+  return {
+    ...documentOf([]),
+    durationFormat,
+    sections: [
+      {
+        title: "Resumen",
+        rows: [
+          headings ?? [],
+          [
+            { kind: "integer", value: 1 },
+            text("Ana"),
+            empty,
+            empty,
+            { kind: "duration", seconds },
+            { kind: "hours", minutes: Math.floor(seconds / 60) },
+          ],
+        ],
+      },
+    ],
+  };
+}
+
+/** 99999:59:59, lo más ancho que escribe el completo en «Duración». */
+const WIDEST_FULL_SECONDS = 99_999 * 3600 + 59 * 60 + 59;
+
+describe("pdfBytesOf con el completo (D-WS2b-9; criterio 10 de WS2b)", () => {
+  it("la cabecera y las filas en `hh:mm:ss`, y las horas como con el compacto", async () => {
+    const [page] = await pdfPageTexts(await pdfBytesOf(oneRowIn("full", 100)));
+
+    expect(page?.text).toContain("Total 00:59:00 0,98");
+    expect(page?.text).toContain("Facturable 00:30:00 0,50");
+    expect(page?.rows).toEqual(["1 Ana 00:01:40 0,01"]);
+  });
+
+  it("`99999:59:59` entra en un renglón de «Duración», con la fuente y el cuerpo del documento", async () => {
+    const [widest] = await pdfPageTexts(
+      await pdfBytesOf(oneRowIn("full", WIDEST_FULL_SECONDS)),
+    );
+    // «0:00» entra en cualquier ancho de la columna: la fila de un renglón.
+    const [narrow] = await pdfPageTexts(await pdfBytesOf(oneRowIn("compact", 0)));
+
+    expect(widest?.rows).toEqual(["1 Ana 99999:59:59 99999,98"]);
+    // Partida en dos renglones, la fila baja el texto más bajo de la página.
+    expect(widest?.lowestY).toBe(narrow?.lowestY);
+  });
+});
 
 describe("pdfBytesOf: el gráfico (D-R7-12; criterio 18 de R7)", () => {
   it("debajo de la cabecera: la leyenda, la escala de abajo arriba y las siete marcas enteras", async () => {

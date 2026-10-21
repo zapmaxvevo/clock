@@ -2,6 +2,7 @@ import { InactiveMembershipNotice } from "@/components/inactive-membership-notic
 import { NameField } from "@/components/name-field";
 import { NAME_MAX, profileMessages, type ProfileActions } from "@/modules/profile/schema";
 import type { ProfileView } from "@/modules/profile/service";
+import { durationFormatText } from "@/modules/workspace/components/labels";
 
 import { dayNames, failureTitles, profileLabels } from "./labels";
 import { FixedSetting, PreferenceField } from "./preference-field";
@@ -92,7 +93,7 @@ export function ProfileScreen({ view, actions }: ProfileScreenProps) {
           />
           <FixedSetting
             label={profileLabels.durationFormat}
-            value={profileLabels.durationValue}
+            value={durationFormatText(view.durationFormat)}
             note={profileLabels.durationNote}
           />
         </div>

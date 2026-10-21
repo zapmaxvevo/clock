@@ -597,6 +597,49 @@ export function expandButton(page: Page, name: string): Locator {
   });
 }
 
+/** Cómo queda el texto de una celda: en cuántos renglones y si entra en su ancho. */
+type CellTextLayout = {
+  readonly lines: number;
+  readonly textWidth: number;
+  readonly contentWidth: number;
+};
+
+/**
+ * Los renglones y el ancho del texto de una celda, frente al ancho de su
+ * contenido sin el relleno (D-WS2b-8). En una tabla de ancho fijo, una cifra
+ * sin cortes que no entra no salta de renglón: se sale de la celda. Las dos
+ * cosas se miden.
+ */
+async function cellTextLayout(cell: Locator): Promise<CellTextLayout> {
+  return cell.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const tops = new Set(
+      [...range.getClientRects()]
+        .filter((rect) => rect.width > 0)
+        .map((rect) => Math.round(rect.top)),
+    );
+    const style = getComputedStyle(element);
+    return {
+      lines: tops.size,
+      textWidth: range.getBoundingClientRect().width,
+      contentWidth:
+        element.clientWidth -
+        parseFloat(style.paddingLeft) -
+        parseFloat(style.paddingRight),
+    };
+  });
+}
+
+/** Afirma que el texto de una celda ocupa un renglón y entra en su ancho. */
+export async function expectOneLine(cell: Locator): Promise<void> {
+  const layout = await cellTextLayout(cell);
+  expect(layout.lines, "renglones de la celda").toBe(1);
+  expect(layout.textWidth, "ancho del texto frente al de la celda").toBeLessThanOrEqual(
+    layout.contentWidth,
+  );
+}
+
 /** La duración de una fila: su única celda de datos (RP-19). */
 export function groupDuration(row: Locator): Locator {
   return row.getByRole("cell");

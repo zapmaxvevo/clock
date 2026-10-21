@@ -69,8 +69,8 @@ export async function seedWorkspace(timezone = buenosAires): Promise<SeededWorks
 }
 
 /**
- * Pone el formato de duración del workspace, como lo haría el selector de
- * WS2b: un `update` de su fila de ajustes (ADR 0029).
+ * Pone el formato de duración del workspace, como lo guarda el selector de
+ * `/configuracion`: un `update` de su fila de ajustes (ADR 0029).
  */
 export async function setDurationFormat(
   workspaceId: string,

@@ -44,6 +44,7 @@ export function exportDocumentOf(
       input.entries === null
         ? [summaryOf(input.report)]
         : [summaryOf(input.report), entriesSectionOf(input.entries)],
+    durationFormat: settings.formats.duration,
   };
 }
 
@@ -118,14 +119,15 @@ function textOrEmpty(value: string | null): ExportCell {
 }
 
 /**
- * «Duración» y «Horas» de los mismos minutos, truncados como `durationLabel`:
- * la suma de las filas queda en el total o debajo (D-R6-6).
+ * «Duración» de los segundos, que cada formato escribe como `formatDuration`
+ * con el formato del documento, y «Horas» de los minutos truncados con los dos
+ * formatos (D-R6-9, ADR 0029): la suma de las filas queda en el total o debajo
+ * (D-R6-6).
  */
 function durationCells(seconds: number): readonly [ExportCell, ExportCell] {
-  const minutes = Math.floor(seconds / 60);
   return [
-    { kind: "duration", minutes },
-    { kind: "hours", minutes },
+    { kind: "duration", seconds },
+    { kind: "hours", minutes: Math.floor(seconds / 60) },
   ];
 }
 

@@ -1,6 +1,8 @@
 import { ValueType, Workbook, type Cell, type Worksheet } from "exceljs";
 import { describe, expect, it } from "vitest";
 
+import { DURATION_FORMATS, type DurationFormat } from "@/server/time";
+
 import type { ExportCell, ExportDocument } from "./types";
 import { xlsxBytesOf } from "./xlsx";
 
@@ -19,6 +21,7 @@ const document: ExportDocument = {
     [text("Zona horaria"), text("America/Argentina/Buenos_Aires")],
   ],
   chart: null,
+  durationFormat: "compact",
   sections: [
     {
       title: "Resumen",
@@ -27,7 +30,7 @@ const document: ExportDocument = {
         [
           { kind: "integer", value: 1 },
           text("=1+1"),
-          { kind: "duration", minutes: 90 },
+          { kind: "duration", seconds: 5400 },
           { kind: "hours", minutes: 89 },
         ],
       ],
@@ -156,6 +159,7 @@ describe("xlsxBytesOf (D-R6-12; criterio 16 de R6)", () => {
     const workbook = await readBack({
       header: [[text("Total"), { kind: "hours", minutes: 3 }]],
       chart: null,
+      durationFormat: "compact",
       sections: [
         {
           title: "Entradas",
@@ -174,6 +178,7 @@ describe("xlsxBytesOf (D-R6-12; criterio 16 de R6)", () => {
     const workbook = await readBack({
       header: [],
       chart: null,
+      durationFormat: "compact",
       sections: [
         {
           title: "Entradas",
@@ -190,5 +195,69 @@ describe("xlsxBytesOf (D-R6-12; criterio 16 de R6)", () => {
       "c\uFFFDd",
       "ok \u{1F600}",
     ]);
+  });
+
+  describe("la duración con el formato del documento (D-WS2b-9; criterio 10 de WS2b)", () => {
+    const hundredSeconds: ExportCell = { kind: "duration", seconds: 100 };
+
+    /** Un documento con 100 segundos en la cabecera y en una fila del resumen. */
+    function withDuration(durationFormat: DurationFormat): ExportDocument {
+      return {
+        header: [
+          [text("Reporte resumido")],
+          [text("Total"), hundredSeconds, { kind: "hours", minutes: 1 }],
+        ],
+        chart: null,
+        durationFormat,
+        sections: [
+          {
+            title: "Resumen",
+            rows: [
+              [text("Nivel"), text("Persona"), text("Duración"), text("Horas")],
+              [
+                { kind: "integer", value: 1 },
+                text("Ana"),
+                hundredSeconds,
+                { kind: "hours", minutes: 1 },
+              ],
+            ],
+          },
+        ],
+      };
+    }
+
+    it("con el compacto, los minutos truncados con `[h]:mm`, como hasta WS2b", async () => {
+      const sheet = sheetOf(await readBack(withDuration("compact")), "Resumen");
+
+      for (const cell of [sheet.getRow(2).getCell(2), sheet.getRow(5).getCell(3)]) {
+        expect(serialOf(cell)).toBeCloseTo(1 / 1440, 9);
+        expect(cell.numFmt).toBe("[h]:mm");
+      }
+    });
+
+    it("con el completo, los segundos con `[hh]:mm:ss`; las horas no cambian", async () => {
+      const sheet = sheetOf(await readBack(withDuration("full")), "Resumen");
+
+      for (const cell of [sheet.getRow(2).getCell(2), sheet.getRow(5).getCell(3)]) {
+        expect(serialOf(cell)).toBeCloseTo(100 / 86_400, 9);
+        expect(cell.numFmt).toBe("[hh]:mm:ss");
+      }
+      expect(sheet.getRow(5).getCell(4).value).toBe(0.01);
+    });
+
+    it.each(DURATION_FORMATS)(
+      "con el %s, cada columna con una duración entra `99999:59:59`, y las demás quedan con el ancho de Excel",
+      async (durationFormat) => {
+        const sheet = sheetOf(await readBack(withDuration(durationFormat)), "Resumen");
+        const widths = [1, 2, 3, 4].map((column) => sheet.getColumn(column).width);
+
+        // Once caracteres y el margen de la celda.
+        const fits = "99999:59:59".length + 1;
+        expect(widths[0]).toBeUndefined();
+        expect(widths[1]).toBeGreaterThanOrEqual(fits);
+        expect(widths[2]).toBeGreaterThanOrEqual(fits);
+        expect(widths[3]).toBeUndefined();
+      },
+    );
   });
 });

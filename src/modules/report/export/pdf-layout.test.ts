@@ -95,7 +95,17 @@ const report: ReportReadyState = {
   chart: null,
 };
 
-function layoutOf(overrides: Partial<ReportReadyState>, covered = coversAll) {
+/** Los mismos ajustes con el completo (ADR 0029). */
+const fullSettings: TimeSettings = {
+  ...settings,
+  formats: { ...settings.formats, duration: "full" },
+};
+
+function layoutOf(
+  overrides: Partial<ReportReadyState>,
+  covered = coversAll,
+  custom: TimeSettings = settings,
+) {
   const input: ReportExportInput = {
     kind: "ready",
     report: { ...report, ...overrides },
@@ -104,7 +114,7 @@ function layoutOf(overrides: Partial<ReportReadyState>, covered = coversAll) {
     generatedAt: new Date("2026-10-12T17:05:00Z"),
     exporter: "Ana Pérez",
   };
-  return pdfLayoutOf(exportDocumentOf(input, settings), covered);
+  return pdfLayoutOf(exportDocumentOf(input, custom), covered);
 }
 
 function tableOf(section: PdfSection | undefined) {
@@ -296,6 +306,7 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
         [text("Período"), text("28/09/2026 → 04/10/2026")],
       ],
       chart: null,
+      durationFormat: "compact",
       sections: [
         {
           title: "Resumen →",
@@ -304,7 +315,7 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
             [
               { kind: "integer", value: 1 },
               text("Дмитрий"),
-              { kind: "duration", minutes: 90 },
+              { kind: "duration", seconds: 5400 },
               { kind: "hours", minutes: 90 },
             ],
           ],
@@ -334,6 +345,7 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
     const entries = (rows: ExportCell[][]): ExportDocument => ({
       header: [[{ kind: "text", text: "Reporte resumido" }]],
       chart: null,
+      durationFormat: "compact",
       sections: [{ title: "Entradas", rows: [headings, ...rows] }],
     });
     expect(() =>
@@ -350,15 +362,42 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
     expect(() => pdfLayoutOf(entries([]), covers)).toThrow(RangeError);
   });
 
-  it("una cabecera sin el título es un `RangeError`", () => {
-    expect(() => pdfLayoutOf({ header: [], chart: null, sections: [] }, covers)).toThrow(
-      RangeError,
+  it("con el completo, la cabecera y las filas en `hh:mm:ss`, las horas iguales y los anchos de siempre (D-WS2b-9)", () => {
+    const layout = layoutOf(threeLevels, coversAll, fullSettings);
+    const table = tableOf(layout.sections[0]);
+
+    expect(layout.header.filter(([name]) => name === "Total")).toEqual([
+      ["Total", "00:59:59", "0,98"],
+    ]);
+    expect(table.rows[4].cells.map(({ text }) => text)).toEqual([
+      "2",
+      "Carla (inactiva)",
+      "Sin proyecto",
+      "",
+      "01:00:00",
+      "1,00",
+    ]);
+    expect(table.columns.map(({ width }) => width)).toEqual(
+      tableOf(layoutOf(threeLevels).sections[0]).columns.map(({ width }) => width),
     );
+  });
+
+  it("una cabecera sin el título es un `RangeError`", () => {
+    expect(() =>
+      pdfLayoutOf(
+        { header: [], chart: null, sections: [], durationFormat: "compact" },
+        covers,
+      ),
+    ).toThrow(RangeError);
   });
 });
 
-function chartOf(chart: ReportChart, covered = coversAll): PdfChart {
-  const layout = layoutOf({ ...threeLevels, chart }, covered);
+function chartOf(
+  chart: ReportChart,
+  covered = coversAll,
+  custom: TimeSettings = settings,
+): PdfChart {
+  const layout = layoutOf({ ...threeLevels, chart }, covered, custom);
   if (layout.chart === null) {
     throw new Error("El diseño no trae el gráfico");
   }
@@ -373,6 +412,16 @@ describe("pdfLayoutOf: el gráfico (D-R7-12; criterio 17 de R7)", () => {
       { label: "1:00", height: 0.5 },
       { label: "1:30", height: 0.75 },
       { label: "2:00", height: 1 },
+    ]);
+  });
+
+  it("con el completo, los rótulos de la escala en `hh:mm:ss` y las mismas alturas (D-WS2b-9)", () => {
+    expect(chartOf(octoberByDay, coversAll, fullSettings).scale).toEqual([
+      { label: "00:00:00", height: 0 },
+      { label: "00:30:00", height: 0.25 },
+      { label: "01:00:00", height: 0.5 },
+      { label: "01:30:00", height: 0.75 },
+      { label: "02:00:00", height: 1 },
     ]);
   });
 

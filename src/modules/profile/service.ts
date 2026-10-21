@@ -14,6 +14,7 @@ import {
   TIME_FORMATS,
   utcOffsetLabel,
   type DateFormat,
+  type DurationFormat,
   type TimeFormat,
   type TimeSettings,
   type WeekStart,
@@ -160,6 +161,8 @@ export type ProfileView = {
   readonly timezoneOption: string;
   /** Sale de `weekStartOf` (PF-01). Solo lectura. */
   readonly weekStart: WeekStart;
+  /** El del workspace, de `timeSettingsOf` (PF-31, ADR 0029). Solo lectura. */
+  readonly durationFormat: DurationFormat;
   /** `can(actor, "profile.own.update", ownProfileResource(actor))`. */
   readonly canEdit: boolean;
   readonly options: {
@@ -198,6 +201,7 @@ export function getProfileView(
     preferences: context.preferences,
     timezoneOption,
     weekStart: settings.weekStart,
+    durationFormat: settings.formats.duration,
     canEdit: can(context.actor, "profile.own.update", ownProfileResource(context.actor)),
     options: {
       timezones: zones.map((zone) => ({

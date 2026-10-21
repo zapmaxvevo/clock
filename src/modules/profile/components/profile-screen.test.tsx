@@ -30,6 +30,7 @@ const view: ProfileView = {
   },
   timezoneOption: "America/Buenos_Aires",
   weekStart: 1,
+  durationFormat: "compact",
   canEdit: true,
   options: {
     timezones: [
@@ -168,6 +169,15 @@ describe("ProfileScreen", () => {
     expect(text).toContain("Primer día de la semanaDomingoLo administra el equipo.");
     expect(text).toContain("Formato de duraciónCompacto (h:mm)Lo define el workspace.");
     expect(comboboxesOf(timeAndDateOf(render()))).toHaveLength(3);
+  });
+
+  it("PF-31: el formato de duración es el del workspace, con el mismo texto que su selector", () => {
+    const text = textOf(render({ durationFormat: "full" }));
+
+    expect(text).toContain(
+      "Formato de duraciónCompleto (hh:mm:ss)Lo define el workspace.",
+    );
+    expect(text).not.toContain("Compacto");
   });
 
   it("con permiso no muestra el aviso de la membresía y ningún control está inactivo", () => {

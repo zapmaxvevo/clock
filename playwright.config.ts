@@ -62,6 +62,7 @@ export default defineConfig({
         /workspace\.setup\.ts$/,
         /duration-full\.(setup|teardown)\.ts$/,
         /\.full\.spec\.ts$/,
+        /\.switch\.spec\.ts$/,
       ],
       use: { ...devices["Desktop Chrome"] },
       dependencies: ["setup"],
@@ -89,6 +90,20 @@ export default defineConfig({
       testMatch: /\.full\.spec\.ts$/,
       use: { ...devices["Desktop Chrome"] },
       dependencies: ["duration-full-setup"],
+    },
+    /*
+     * Los recorridos que cambian el formato desde `/configuracion` (D-WS2b-12
+     * de WS2b): después del completo y sin nada en paralelo, porque cambiarlo
+     * cambia lo que leen los demás specs. Depende de `duration-full`, así que
+     * el teardown del completo espera también a este proyecto y deja el
+     * workspace en `compact`. Para iterar: `--project duration-switch
+     * --no-deps`, con el formato puesto a mano (§9.5 del contrato de WS2b).
+     */
+    {
+      name: "duration-switch",
+      testMatch: /\.switch\.spec\.ts$/,
+      use: { ...devices["Desktop Chrome"] },
+      dependencies: ["duration-full"],
     },
   ],
   webServer:

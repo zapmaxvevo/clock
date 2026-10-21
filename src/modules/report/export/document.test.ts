@@ -1,7 +1,6 @@
 import { Workbook } from "exceljs";
 import { describe, expect, it } from "vitest";
 
-import { durationLabel } from "@/modules/report/components/group-heading";
 import {
   NO_REPORT_FILTERS,
   type ReportChart,
@@ -9,7 +8,12 @@ import {
   type ReportGroup,
   type ReportReadyState,
 } from "@/modules/report/schema";
-import type { TimeSettings } from "@/server/time";
+import {
+  DURATION_FORMATS,
+  formatDuration,
+  type DurationFormat,
+  type TimeSettings,
+} from "@/server/time";
 
 import { csvBytesOf } from "./csv";
 import { exportDocumentOf, groupTextOf, type ReportExportInput } from "./document";
@@ -21,6 +25,11 @@ const settings: TimeSettings = {
   weekStart: 1,
   formats: { time: "24h", date: "dd/MM/yyyy", duration: "compact" },
 };
+
+/** Los mismos ajustes con otro formato de duración (ADR 0029). */
+function settingsIn(duration: DurationFormat): TimeSettings {
+  return { ...settings, formats: { ...settings.formats, duration } };
+}
 
 const ANA = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
 const BRUNO = "Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx";
@@ -80,9 +89,12 @@ function input(
  * comillas. `TextDecoder` quita el BOM. Ningún texto de este archivo lleva un
  * salto de línea, así que cada línea es una fila.
  */
-function texts(rows: readonly ExportRow[]): string[][] {
+function texts(
+  rows: readonly ExportRow[],
+  durationFormat: DurationFormat = "compact",
+): string[][] {
   const csv = new TextDecoder().decode(
-    csvBytesOf({ header: rows, chart: null, sections: [] }),
+    csvBytesOf({ header: rows, chart: null, sections: [], durationFormat }),
   );
   return csv
     .split("\r\n")
@@ -95,7 +107,7 @@ function texts(rows: readonly ExportRow[]): string[][] {
 }
 
 function header(document: ReturnType<typeof exportDocumentOf>): string[][] {
-  return texts(document.header);
+  return texts(document.header, document.durationFormat);
 }
 
 /** Las filas de la cabecera que empiezan con `name`. */
@@ -120,8 +132,12 @@ function section(
   return found;
 }
 
-function summary(overrides: Partial<ReportReadyState>): string[][] {
-  return texts(section(exportDocumentOf(input(overrides), settings), "Resumen").rows);
+function summary(
+  overrides: Partial<ReportReadyState>,
+  custom: TimeSettings = settings,
+): string[][] {
+  const document = exportDocumentOf(input(overrides), custom);
+  return texts(section(document, "Resumen").rows, document.durationFormat);
 }
 
 describe("exportDocumentOf: la cabecera (D-R6-8)", () => {
@@ -143,8 +159,22 @@ describe("exportDocumentOf: la cabecera (D-R6-8)", () => {
     expect(rows[0]).toEqual([{ kind: "text", text: "Reporte resumido" }]);
     expect(rows[5]).toEqual([
       { kind: "text", text: "Total" },
-      { kind: "duration", minutes: 59 },
+      { kind: "duration", seconds: 3599 },
       { kind: "hours", minutes: 59 },
+    ]);
+  });
+
+  it("el documento lleva el formato de duración de los ajustes (D-WS2b-9)", () => {
+    expect(exportDocumentOf(input(), settings).durationFormat).toBe("compact");
+    expect(exportDocumentOf(input(), settingsIn("full")).durationFormat).toBe("full");
+  });
+
+  it("con el completo, el total y el facturable en `hh:mm:ss`, y las horas iguales", () => {
+    const rows = header(exportDocumentOf(input(), settingsIn("full")));
+
+    expect(rows.filter(([name]) => name === "Total" || name === "Facturable")).toEqual([
+      ["Total", "00:59:59", "0,98"],
+      ["Facturable", "00:30:00", "0,50"],
     ]);
   });
 
@@ -397,7 +427,7 @@ describe("exportDocumentOf con las personas sin horas (D-R9-10; criterio 15 de R
       { kind: "integer", value: 1 },
       { kind: "text", text: "Bruno" },
       { kind: "empty" },
-      { kind: "duration", minutes: 0 },
+      { kind: "duration", seconds: 0 },
       { kind: "hours", minutes: 0 },
     ]);
   });
@@ -501,7 +531,7 @@ describe("exportDocumentOf: el resumen (D-R6-7)", () => {
       { kind: "text", text: "Ana" },
       { kind: "empty" },
       { kind: "empty" },
-      { kind: "duration", minutes: 600 },
+      { kind: "duration", seconds: 36_059 },
       { kind: "hours", minutes: 600 },
     ]);
   });
@@ -524,20 +554,32 @@ describe("exportDocumentOf: el resumen (D-R6-7)", () => {
     ]);
   });
 
-  it("los minutos de cada fila son los de `durationLabel`, truncados", () => {
-    for (const seconds of [0, 59, 60, 3599, 5399, 36_059]) {
-      const rows = summary({
-        groups: [{ kind: "person", userId: ANA, name: "Ana", inactive: false, seconds }],
-      });
-      expect(rows[1][2]).toBe(durationLabel(seconds));
-    }
-    expect(
-      summary({
-        groups: [
-          { kind: "person", userId: ANA, name: "Ana", inactive: false, seconds: 3599 },
-        ],
-      })[1],
-    ).toEqual(["1", "Ana", "0:59", "0,98"]);
+  it.each(DURATION_FORMATS)(
+    "la duración de cada fila es la de `formatDuration` en %s",
+    (duration) => {
+      for (const seconds of [0, 59, 60, 3599, 5399, 36_059]) {
+        const rows = summary(
+          {
+            groups: [
+              { kind: "person", userId: ANA, name: "Ana", inactive: false, seconds },
+            ],
+          },
+          settingsIn(duration),
+        );
+        expect(rows[1][2]).toBe(formatDuration(seconds, duration));
+      }
+    },
+  );
+
+  it("las horas salen de los minutos truncados con los dos formatos (D-R6-9, ADR 0029)", () => {
+    const ana = {
+      groups: [
+        { kind: "person", userId: ANA, name: "Ana", inactive: false, seconds: 3599 },
+      ],
+    } satisfies Partial<ReportReadyState>;
+
+    expect(summary(ana)[1]).toEqual(["1", "Ana", "0:59", "0,98"]);
+    expect(summary(ana, settingsIn("full"))[1]).toEqual(["1", "Ana", "00:59:59", "0,98"]);
   });
 
   it("sin grupos, el vacío y, con filtros efectivos, el segundo vacío, sin encabezados", () => {
@@ -780,7 +822,7 @@ describe("exportDocumentOf: las entradas (D-R6-3)", () => {
       { kind: "empty" },
       { kind: "empty" },
       { kind: "text", text: "No" },
-      { kind: "duration", minutes: 1 },
+      { kind: "duration", seconds: 60 },
       { kind: "hours", minutes: 1 },
     ]);
   });
