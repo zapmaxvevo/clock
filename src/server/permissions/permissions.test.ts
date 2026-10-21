@@ -156,9 +156,20 @@ describe("can sobre proyectos", () => {
     ) => isPublic || viewer !== null,
     "task.create": (role: Role, _isPublic: boolean, viewer: ProjectResource["viewer"]) =>
       isAdmin(role) || viewer?.isManager === true,
+    // PR-55, PR-56, D-P1-2.
+    "project.update": (
+      role: Role,
+      _isPublic: boolean,
+      viewer: ProjectResource["viewer"],
+    ) => isAdmin(role) || viewer?.isManager === true,
   } as const;
 
-  for (const action of ["project.view", "project.track", "task.create"] as const) {
+  for (const action of [
+    "project.view",
+    "project.track",
+    "task.create",
+    "project.update",
+  ] as const) {
     describe(action, () => {
       for (const role of roles) {
         for (const isPublic of [true, false]) {
@@ -206,7 +217,12 @@ describe("can sobre proyectos", () => {
         can(actor("member"), "project.create", workspace),
       );
       for (const resource of resources) {
-        for (const action of ["project.view", "project.track", "task.create"] as const) {
+        for (const action of [
+          "project.view",
+          "project.track",
+          "task.create",
+          "project.update",
+        ] as const) {
           expect(can(actor(role), action, resource)).toBe(
             can(actor("member"), action, resource),
           );
@@ -231,6 +247,35 @@ describe("can sobre proyectos", () => {
       expect(can(blocked, "project.view", managed)).toBe(false);
       expect(can(blocked, "project.track", managed)).toBe(false);
       expect(can(blocked, "task.create", managed)).toBe(false);
+      expect(can(blocked, "project.update", managed)).toBe(false);
+    }
+  });
+
+  it("project.update: la marca de responsable lo da a un member, y la pertenencia sola no (PR-55, PR-56)", () => {
+    expect(
+      can(actor("member"), "project.update", project(true, { isManager: true })),
+    ).toBe(true);
+    expect(
+      can(actor("member"), "project.update", project(true, { isManager: false })),
+    ).toBe(false);
+    expect(can(actor("member"), "project.update", project(true, null))).toBe(false);
+  });
+
+  it("project.update: el rol project_manager no alcanza sin la marca (PR-56, P-24)", () => {
+    for (const viewer of [null, { isManager: false }] as const) {
+      expect(can(actor("project_manager"), "project.update", project(true, viewer))).toBe(
+        false,
+      );
+    }
+    expect(
+      can(actor("project_manager"), "project.update", project(true, { isManager: true })),
+    ).toBe(true);
+  });
+
+  it("project.update: owner y admin editan sin ser miembros, también un privado", () => {
+    for (const role of ["owner", "admin"] as const) {
+      expect(can(actor(role), "project.update", project(true, null))).toBe(true);
+      expect(can(actor(role), "project.update", project(false, null))).toBe(true);
     }
   });
 
@@ -243,6 +288,7 @@ describe("can sobre proyectos", () => {
     } as const;
     expect(can(actor("owner"), "project.view", foreign)).toBe(false);
     expect(can(actor("owner"), "task.create", foreign)).toBe(false);
+    expect(can(actor("owner"), "project.update", foreign)).toBe(false);
   });
 });
 
@@ -301,6 +347,8 @@ describe("can con un recurso de otra clase", () => {
     expect(can(actor("owner"), "project.view", workspace)).toBe(false);
     // @ts-expect-error: project.track pide un recurso project.
     expect(can(actor("owner"), "project.track", workspace)).toBe(false);
+    // @ts-expect-error: project.update pide un recurso project.
+    expect(can(actor("owner"), "project.update", workspace)).toBe(false);
   });
 
   it("client.create y project.create niegan un recurso membership o timeEntry, que ninguna otra regla mira", () => {
