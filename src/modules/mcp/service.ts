@@ -17,7 +17,7 @@ import {
   MCP_CALLS_PER_MINUTE,
   mcpMessages,
   mcpViewTexts,
-  type ConsentView,
+  type ConsentRead,
   type DecideConsentInput,
   type DecideConsentResult,
   type GrantsView,
@@ -61,7 +61,8 @@ function clientNameOf(name: string | null): string {
   return trimmed === "" ? mcpViewTexts.unnamedClient : trimmed;
 }
 
-function workspaceResource(actor: Actor) {
+/** El recurso de `mcp.connect`: el workspace de quien pide. */
+export function workspaceResource(actor: Actor) {
   return { kind: "workspace", workspaceId: actor.workspaceId } as const;
 }
 
@@ -105,14 +106,18 @@ function firstOf(value: string | string[] | undefined): string | undefined {
 }
 
 /**
- * D-MCP-15, §5.1: lo que muestra `/conectar`. Arma la consulta con `oauthQueryOf`,
- * la verifica con `verifyOAuthQueryParams` y su `exp`, y saca el destino del
- * `redirect_uri` firmado y el nombre de `findClientName(client_id)`.
+ * D-MCP-15, §5.1: lo que muestra `/conectar`; `disabled` con el MCP apagado. Arma
+ * la consulta con `oauthQueryOf`, la verifica con `verifyOAuthQueryParams` y su
+ * `exp`, y saca el destino del `redirect_uri` firmado y el nombre de
+ * `findClientName(client_id)`.
  */
 export async function getConsentView(
   context: SessionContext,
   searchParams: Record<string, string | string[] | undefined>,
-): Promise<ConsentView> {
+): Promise<ConsentRead> {
+  if (!env().MCP_ENABLED) {
+    return { kind: "disabled" };
+  }
   const oauthQuery = oauthQueryOf(searchParams);
   const clientId = firstOf(searchParams.client_id);
   const redirectUri = firstOf(searchParams.redirect_uri);

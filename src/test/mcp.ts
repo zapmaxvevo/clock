@@ -76,7 +76,8 @@ export type RegistrationBody = {
   readonly scope?: string;
 };
 
-function authUrl(path: string): string {
+/** La dirección de `path` en el servidor de autorización. */
+export function authUrl(path: string): string {
   return `${appOrigin()}/api/auth${path}`;
 }
 
@@ -277,12 +278,15 @@ export async function redirectUrlOf(response: Response): Promise<URL> {
   return new URL(body.url, appOrigin());
 }
 
-/** Un `POST` de formulario a `/oauth2/token`, sin cookie ni `Origin`. */
-export function tokenRequest(form: Readonly<Record<string, string>>): Promise<Response> {
+/** Un `POST` de formulario a `/oauth2/token`, sin cookie ni `Origin`, con `headers` encima. */
+export function tokenRequest(
+  form: Readonly<Record<string, string>>,
+  headers: Readonly<Record<string, string>> = {},
+): Promise<Response> {
   return auth.handler(
     new Request(authUrl("/oauth2/token"), {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
+      headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
       body: new URLSearchParams(form).toString(),
     }),
   );

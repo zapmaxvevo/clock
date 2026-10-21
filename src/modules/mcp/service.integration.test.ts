@@ -207,6 +207,22 @@ describe("revokeGrant (criterio 12, D-MCP-5)", () => {
 });
 
 describe("getConsentView (§5.1, D-MCP-15)", () => {
+  it("apagado, disabled aunque la consulta firmada valga (criterio 16)", async () => {
+    const { userId, email } = await seedPerson();
+    const client = await registeredClient(registrations.claudeAi());
+    const { query } = await signedConsentQuery(email, client);
+    const context = await contextOf(userId, email);
+
+    const saved = replaceEnv({ MCP_ENABLED: undefined });
+    try {
+      expect(await getConsentView(context, pageParamsOf(query))).toEqual({
+        kind: "disabled",
+      });
+    } finally {
+      restoreEnv(saved);
+    }
+  });
+
   it("ready: el nombre declarado, adónde vuelve el redirect_uri firmado y el correo", async () => {
     const { userId, email } = await seedPerson();
     const client = await registeredClient(registrations.claudeAi());

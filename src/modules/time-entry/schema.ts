@@ -36,6 +36,7 @@ export const timeEntryMessages = {
   forbidden: "No tenés permiso para hacer esto.",
   forbiddenOtherOwner: "No tenés permiso para editar esta entrada.",
   alreadyStopped: "Este timer ya había sido detenido.",
+  noRunningTimer: "No hay ningún timer corriendo.",
   endBeforeStart: "La hora de fin tiene que ser posterior a la de inicio.",
   timerRunning: "Detené el timer para agregar tiempo a mano.",
   tooShort: "La entrada tiene que durar al menos un minuto.",
@@ -117,6 +118,9 @@ export const startTimerInput = z
   .refine(hasProjectForTask, taskNeedsProject);
 
 export const stopTimerInput = z.object({ id: z.uuid() });
+
+/** D-MCP-8: el `stop_timer` del MCP; sin `id`, el timer que corre. */
+export const stopRunningTimerInput = z.object({ id: z.uuid().optional() });
 
 export const updateDescriptionInput = z.object({
   id: z.uuid(),
@@ -418,6 +422,7 @@ export type StartTimerInput = z.input<typeof startTimerInput>;
 /** Lo que recibe el service: `description` ya validada y con su default. */
 export type StartTimerValues = z.output<typeof startTimerInput>;
 export type StopTimerInput = z.infer<typeof stopTimerInput>;
+export type StopRunningTimerInput = z.infer<typeof stopRunningTimerInput>;
 export type UpdateDescriptionInput = z.infer<typeof updateDescriptionInput>;
 export type DeleteEntryInput = z.infer<typeof deleteEntryInput>;
 export type CreateManualEntryInput = z.input<typeof createManualEntryInput>;

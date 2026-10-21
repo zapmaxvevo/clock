@@ -8,6 +8,7 @@ import {
   deleteEntryInput,
   entriesPeriodInput,
   startTimerInput,
+  stopRunningTimerInput,
   stopTimerInput,
   updateEntryInput,
   type CreateManualEntryInput,
@@ -18,6 +19,7 @@ import {
   type EntriesPeriodInput,
   type StartTimerInput,
   type StartTimerResult,
+  type StopRunningTimerInput,
   type StopTimerInput,
   type StopTimerResult,
   type TimeEntryView,
@@ -44,6 +46,16 @@ export async function stopTimer(
   input: StopTimerInput,
 ): Promise<StopTimerResult> {
   const values = stopTimerInput.parse(input);
+  assertCan(context.actor, "timeEntry.own.update", ownTimeEntryResource(context.actor));
+  return service.stopTimer(context.actor, trackerWorkspaceOf(context), values);
+}
+
+/** D-MCP-8: el `stop_timer` del MCP: el del `id`, o el que corre si no se manda. */
+export async function stopRunningTimer(
+  context: ProfileContext,
+  input: StopRunningTimerInput,
+): Promise<StopTimerResult> {
+  const values = stopRunningTimerInput.parse(input);
   assertCan(context.actor, "timeEntry.own.update", ownTimeEntryResource(context.actor));
   return service.stopTimer(context.actor, trackerWorkspaceOf(context), values);
 }

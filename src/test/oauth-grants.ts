@@ -18,17 +18,22 @@ import {
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/** Un cliente registrado, como lo deja `/oauth2/register`. Devuelve su `client_id`. */
+/**
+ * Un cliente registrado, como lo deja `/oauth2/register`; con `userId`, como lo
+ * dejaría un registro con la sesión de esa persona. Devuelve su `client_id`.
+ */
 export async function seedOAuthClient(
   values: {
     readonly name?: string | null;
     readonly redirectUris?: readonly string[];
+    readonly userId?: string;
   } = {},
 ): Promise<string> {
   const clientId = randomUUID();
   await db.insert(oauthClient).values({
     id: randomUUID(),
     clientId,
+    userId: values.userId,
     name: values.name === undefined ? "Asistente de prueba" : values.name,
     redirectUris: [...(values.redirectUris ?? ["http://127.0.0.1:4000/callback"])],
     tokenEndpointAuthMethod: "none",

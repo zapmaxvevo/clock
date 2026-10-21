@@ -18,7 +18,11 @@ import { loginErrorUrl, sessionEntryError } from "@/server/entry";
 import { env } from "@/server/env";
 import { can } from "@/server/permissions";
 import { captureAuthRequest } from "@/server/mcp-v7-capture";
-import { readUserContext, type SessionUser } from "@/server/user-context";
+import {
+  readUserContext,
+  type SessionContext,
+  type SessionUser,
+} from "@/server/user-context";
 
 function originOf(url: string): string {
   return new URL(url).origin;
@@ -27,6 +31,11 @@ function originOf(url: string): string {
 /** D-MCP-2: `<BETTER_AUTH_URL>/api/mcp`, sin barra final. Audiencia y dirección para pegar. */
 export function mcpResourceUrl(): string {
   return `${originOf(env().BETTER_AUTH_URL)}/api/mcp`;
+}
+
+/** D-MCP-2: la dirección de los metadatos del recurso, con el camino del recurso. */
+export function resourceMetadataUrl(): string {
+  return `${originOf(env().BETTER_AUTH_URL)}/.well-known/oauth-protected-resource/api/mcp`;
 }
 
 /** D-MCP-2: `<BETTER_AUTH_URL>/api/auth`. */
@@ -79,14 +88,22 @@ export function mcpAuthPlugins() {
       validateRedirectUri: (uri, _registered, matched) =>
         matched && isAllowedRedirect(uri, env().MCP_REDIRECT_URIS),
       // No son decisiones de acceso de Clock: cierran los endpoints de
-      // administración de clientes y recursos, que no se usan (D-MCP-2). `create`
-      // queda para el registro dinámico, que pasa por `mcpAuthMiddleware`.
-      clientPrivileges: ({ action }) => action === "create",
+      // administración de clientes y recursos, que no se usan (D-MCP-2). El
+      // plugin no consulta `clientPrivileges` en un registro sin sesión: el
+      // registro dinámico anónimo, que pasa por `mcpAuthMiddleware`, es el único
+      // que crea clientes.
+      clientPrivileges: () => false,
       resourcePrivileges: () => false,
       accessTokenExpiresIn: 60 * 60,
       refreshTokenExpiresIn: 60 * 60 * 24 * 30,
       refreshTokenReuseInterval: 30,
-      rateLimit: { register: { window: 60, max: 5 } },
+      // Escritos aunque `token` y `authorize` sean los del plugin: un cambio de
+      // versión no los mueve sin que se note.
+      rateLimit: {
+        token: { window: 60, max: 20 },
+        authorize: { window: 60, max: 30 },
+        register: { window: 60, max: 5 },
+      },
     }),
   ] as const;
 }
@@ -167,21 +184,39 @@ const withResource = z.object({
 
 const accepted = z.object({ accept: z.literal(true) });
 
-/** D-MCP-3, D-MCP-4: el motivo por el que la persona no autoriza, o `null` si puede. */
-async function denialOf(user: SessionUser): Promise<AccessDenialReason | null> {
+export type AssistantContextRead =
+  | { readonly kind: "ready"; readonly context: SessionContext }
+  | { readonly kind: "denied"; readonly reason: AccessDenialReason };
+
+/**
+ * D-MCP-3, D-MCP-4: el contexto de quien autoriza o usa un asistente, con la
+ * misma regla que una sesión y, además, `mcp.connect`: una membresía inactiva
+ * no autoriza ni ve nada. La usan `readMcpContext` y `mcpAuthMiddleware`.
+ */
+export async function readAssistantContext(
+  user: SessionUser,
+): Promise<AssistantContextRead> {
   const read = await readUserContext(user);
   if (read.kind !== "ready") {
-    return read.kind === "denied" ? read.reason : "sin_invitacion";
+    return read;
   }
   const { actor } = read.context;
   const workspace = { kind: "workspace", workspaceId: actor.workspaceId } as const;
-  return can(actor, "mcp.connect", workspace) ? null : "membresia_inactiva";
+  return can(actor, "mcp.connect", workspace)
+    ? read
+    : { kind: "denied", reason: "membresia_inactiva" };
+}
+
+/** D-MCP-3, D-MCP-4: el motivo por el que la persona no autoriza, o `null` si puede. */
+async function denialOf(user: SessionUser): Promise<AccessDenialReason | null> {
+  const read = await readAssistantContext(user);
+  return read.kind === "denied" ? read.reason : null;
 }
 
 /**
  * El gancho `hooks.before`: sobre el registro, la lista de redirecciones (D-MCP-2);
- * sobre `/oauth2/authorize` y `/oauth2/consent`, `mcpAuthorizationGate` (D-MCP-4),
- * también en la retoma después del ingreso y en el `authorize` interno del
+ * sobre `/oauth2/authorize` y `/oauth2/consent`, la puerta de D-MCP-4 con
+ * `readAssistantContext`, también en la retoma después del ingreso y en el `authorize` interno del
  * consentimiento. Sobre cualquier otro camino no hace nada.
  */
 export const mcpAuthMiddleware = createAuthMiddleware(async (ctx) => {
@@ -193,7 +228,7 @@ export const mcpAuthMiddleware = createAuthMiddleware(async (ctx) => {
   if (ctx.path !== AUTHORIZE_PATH && ctx.path !== CONSENT_PATH) {
     return;
   }
-  // D-MCP-4, `mcpAuthorizationGate`. El `resource` lo valida el plugin: acá
+  // D-MCP-4. El `resource` lo valida el plugin: acá
   // solo se exige que esté. Ningún rechazo redirige a un `redirect_uri`, que
   // todavía no se validó contra el registro del cliente.
   const isAuthorize = ctx.path === AUTHORIZE_PATH;

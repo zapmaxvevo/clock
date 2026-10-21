@@ -34,7 +34,7 @@ import { membershipOf } from "@/test/queries";
 import { actorIn } from "@/test/time-entry";
 
 import { handleMcpRequest } from "./handler";
-import { MCP_CALLS_PER_MINUTE, MCP_TOOL_NAMES, mcpMessages } from "./schema";
+import { MCP_CALLS_PER_MINUTE, mcpMessages } from "./schema";
 import { revokeGrant } from "./service";
 import { DELETE, GET } from "@/app/api/mcp/route";
 import { GET as protectedResourceRoot } from "@/app/.well-known/oauth-protected-resource/route";
@@ -57,6 +57,18 @@ afterAll(() => {
 });
 
 const RESOURCE_METADATA = `${appOrigin()}/.well-known/oauth-protected-resource/api/mcp`;
+
+/** D-MCP-8: las ocho herramientas que anuncia `tools/list`. */
+const MCP_TOOL_NAMES = [
+  "get_context",
+  "list_projects",
+  "list_entries",
+  "create_entry",
+  "update_entry",
+  "delete_entry",
+  "start_timer",
+  "stop_timer",
+];
 
 /** Una persona del dominio con membresía activa en un workspace nuevo. */
 async function seedPerson(email = `${randomUUID()}@empresa.com`) {

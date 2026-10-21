@@ -22,8 +22,6 @@ export type GrantRow = {
   /** `client_name` del registro: lo declara el cliente, no se confía en él. */
   readonly clientName: string | null;
   readonly redirectUris: readonly string[];
-  /** La unión de los alcances de sus consentimientos. */
-  readonly scopes: readonly string[];
   /** El consentimiento más viejo del cliente. */
   readonly grantedAt: Date;
 };
@@ -47,7 +45,6 @@ export async function listGrantsOf(
   const rows = await tx
     .select({
       clientId: oauthConsent.clientId,
-      scopes: oauthConsent.scopes,
       createdAt: oauthConsent.createdAt,
       clientName: oauthClient.name,
       redirectUris: oauthClient.redirectUris,
@@ -62,7 +59,6 @@ export async function listGrantsOf(
       clientId: row.clientId,
       clientName: row.clientName,
       redirectUris: row.redirectUris,
-      scopes: sortedUnion([current?.scopes ?? [], row.scopes]),
       grantedAt:
         current === undefined || row.createdAt < current.grantedAt
           ? row.createdAt

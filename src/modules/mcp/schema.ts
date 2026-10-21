@@ -9,22 +9,9 @@ export const MCP_SCOPES = ["clock", "offline_access"] as const;
 /** D-MCP-13: pedidos por persona y por minuto a `/api/mcp`. */
 export const MCP_CALLS_PER_MINUTE = 120;
 
-export const MCP_TOOL_NAMES = [
-  "get_context",
-  "list_projects",
-  "list_entries",
-  "create_entry",
-  "update_entry",
-  "delete_entry",
-  "start_timer",
-  "stop_timer",
-] as const;
-export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
-
 /** Textos que la interfaz y las herramientas muestran tal cual. */
 export const mcpMessages = {
   unexpected: "No se pudo completar el pedido. Volvé a intentar.",
-  noRunningTimer: "No hay ningún timer corriendo.",
   rateLimited: "Demasiados pedidos seguidos. Esperá un minuto y volvé a intentar.",
   grantForbidden: "No tenés permiso para hacer esto.",
   consentExpired: "El pedido de conexión venció. Volvé a conectar desde el asistente.",
@@ -114,12 +101,7 @@ export const stopTimerToolInput = z.object({
   id: z.uuid().optional().describe("El timer a detener; sin id, el que corre."),
 });
 
-export type ListEntriesToolInput = z.output<typeof listEntriesToolInput>;
-export type CreateEntryToolInput = z.output<typeof createEntryToolInput>;
 export type UpdateEntryToolInput = z.output<typeof updateEntryToolInput>;
-export type DeleteEntryToolInput = z.output<typeof deleteEntryToolInput>;
-export type StartTimerToolInput = z.output<typeof startTimerToolInput>;
-export type StopTimerToolInput = z.output<typeof stopTimerToolInput>;
 
 // Las salidas: el `outputSchema` de cada herramienta y el tipo de su
 // `structuredContent`.
@@ -227,6 +209,9 @@ export type GrantsView =
 export const revokeGrantInput = z.object({ clientId: z.string().min(1).max(255) });
 export type RevokeGrantInput = z.infer<typeof revokeGrantInput>;
 export type RevokeGrantResult = { readonly clientId: string };
+
+/** Lo que devuelve `getConsentView`: `disabled` con el MCP apagado, y la página responde 404. */
+export type ConsentRead = { readonly kind: "disabled" } | ConsentView;
 
 export type ConsentView =
   /** Sin consulta, con una firma que no verifica, vencida, o de un cliente que no existe. */

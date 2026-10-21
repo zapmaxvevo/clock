@@ -49,9 +49,12 @@ const NO_ACCESS: AccessDenialReason = "sin_invitacion";
 /**
  * D-MCP-3, D-MCP-4: el armado de un pedido a partir de la persona, sin cookies:
  * identidad por pedido, `ensureWorkspaceContext` y el perfil. Lo usan
- * `readSession`, `readMcpContext` y `mcpAuthorizationGate`; la regla vive una vez.
+ * `readSession` y `readAssistantContext`, que lee el token del MCP en
+ * `readMcpContext` y autoriza en `mcpAuthMiddleware`; la regla vive una vez.
  */
-export async function readUserContext(user: SessionUser): Promise<SessionRead> {
+export async function readUserContext(
+  user: SessionUser,
+): Promise<Exclude<SessionRead, { kind: "anonymous" }>> {
   const identity = await decideSessionIdentity(user.email);
   if (!identity.allowed) {
     return { kind: "denied", reason: identity.reason };

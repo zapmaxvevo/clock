@@ -681,6 +681,43 @@ describe("stopTimer", () => {
     expect((await allTimeEntries())[0].endedAt).toBeNull();
   });
 
+  it("sin id, cierra el timer propio que corre y no el de otra persona (D-MCP-8)", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const others = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-01T11:00:00Z",
+    });
+    const own = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-01T11:00:00Z",
+    });
+
+    const result = await stopTimer(actor, workspaceOf(buenosAires), {});
+
+    expect(result.stopped.id).toBe(own.id);
+    expect(result.stopped.endedAt).not.toBeNull();
+    const endedOf = new Map((await allTimeEntries()).map((row) => [row.id, row.endedAt]));
+    expect(endedOf.get(own.id)).not.toBeNull();
+    expect(endedOf.get(others.id)).toBeNull();
+  });
+
+  it("sin id y sin timer propio, not_found con noRunningTimer, sin tocar el de otra persona", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-01T11:00:00Z",
+    });
+
+    await expect(stopTimer(actor, workspaceOf(buenosAires), {})).rejects.toMatchObject({
+      code: "not_found",
+      message: timeEntryMessages.noRunningTimer,
+    });
+    expect((await allTimeEntries())[0].endedAt).toBeNull();
+  });
+
   it("rechaza con el mensaje neutro cuando la membresía no está activa", async () => {
     const started = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,

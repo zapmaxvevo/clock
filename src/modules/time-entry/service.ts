@@ -93,7 +93,7 @@ import {
   type SetTimesheetCellValues,
   type StartTimerValues,
   type StartTimerResult,
-  type StopTimerInput,
+  type StopRunningTimerInput,
   type StopTimerResult,
   type TimeEntryErrorCode,
   type TimeEntryView,
@@ -739,14 +739,25 @@ export async function duplicateEntry(
   });
 }
 
+/**
+ * Detiene el timer del `id`, o sin `id` el que corre (D-MCP-8), leído en la
+ * misma transacción: si otro pedido lo cerró entre la lectura y el bloqueo,
+ * responde `already_stopped`.
+ */
 export async function stopTimer(
   actor: Actor,
   workspace: TrackerWorkspace,
-  input: StopTimerInput,
+  input: StopRunningTimerInput,
 ): Promise<StopTimerResult> {
   const stopped = await translatingEndBeforeStart(() =>
     db.transaction(async (tx) => {
-      const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
+      const id =
+        input.id ??
+        (await timeEntryRepository.findRunning(actor.workspaceId, actor.userId, tx))?.id;
+      if (id === undefined) {
+        throw new TimeEntryError("not_found", timeEntryMessages.noRunningTimer);
+      }
+      const row = await readOwnEntry(tx, actor, "timeEntry.own.update", id);
       if (row.endedAt !== null) {
         throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
       }

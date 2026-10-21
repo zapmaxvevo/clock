@@ -7,27 +7,21 @@
 import { verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import { isAPIError } from "better-auth/api";
 import { verifyJwsAccessToken } from "better-auth/oauth2";
+import { decodeProtectedHeader, errors } from "jose";
 import { z } from "zod";
 
 import { MCP_SCOPES } from "@/modules/mcp/schema";
 import { auth } from "@/server/auth";
 import { findSessionUser } from "@/server/auth-records";
 import { env } from "@/server/env";
-import { mcpIssuer, mcpResourceUrl } from "@/server/mcp-auth";
+import {
+  mcpIssuer,
+  mcpResourceUrl,
+  readAssistantContext,
+  resourceMetadataUrl,
+} from "@/server/mcp-auth";
 import { hasGrant } from "@/server/oauth-records";
-import { can } from "@/server/permissions";
-import { readUserContext, type SessionContext } from "@/server/user-context";
-
-/** Lo que el token dice, ya verificado (D-MCP-3, pasos 1 a 4). */
-export type McpGrant = {
-  /** `sub`. */
-  readonly userId: string;
-  /** `azp`. */
-  readonly clientId: string;
-  readonly scopes: readonly string[];
-  /** `exp`, en segundos. */
-  readonly expiresAt: number;
-};
+import type { SessionContext } from "@/server/user-context";
 
 /** El contexto de la sesión con el actor marcado con su cliente (D-MCP-12). */
 export type McpContext = SessionContext;
@@ -38,7 +32,7 @@ export type McpContextRead =
       readonly error: "invalid_request" | "invalid_token" | null;
     }
   | { readonly kind: "insufficient_scope" }
-  | { readonly kind: "ready"; readonly context: McpContext; readonly grant: McpGrant };
+  | { readonly kind: "ready"; readonly context: McpContext };
 
 const SCOPE_CHALLENGE = MCP_SCOPES.join(" ");
 
@@ -52,7 +46,8 @@ const REQUIRED_SCOPE = "clock";
  */
 const JWKS_CACHE_KEY = Object.freeze({});
 
-const BEARER = /^Bearer ([A-Za-z0-9\-._~+/]+=*)$/;
+/** RFC 7235 §2.1: el esquema no distingue mayúsculas. */
+const BEARER = /^Bearer ([A-Za-z0-9\-._~+/]+=*)$/i;
 
 const UNAUTHORIZED = { kind: "unauthorized", error: "invalid_token" } as const;
 
@@ -60,11 +55,39 @@ const claims = z.object({
   sub: z.string().min(1),
   azp: z.string().min(1),
   scope: z.string(),
-  exp: z.number(),
+  // RFC 9449 §7.2: un token atado a una clave DPoP no se acepta como portador.
+  cnf: z.never().optional(),
 });
 
-/** D-MCP-3, paso 2: el token verificado en el proceso, o `null` si no pasa. */
+/** La cabecera del JWS se lee, o el token no es un JWS. */
+function hasProtectedHeader(token: string): boolean {
+  try {
+    decodeProtectedHeader(token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Los errores de jose que vienen de las claves o de quien las sirve, no del
+ * token (los mismos que `verifyAccessTokenPayload` del plugin relanza).
+ */
+const JWKS_FAILURES: ReadonlySet<string> = new Set([
+  errors.JWKSTimeout.code,
+  errors.JWKSInvalid.code,
+  errors.JWKSMultipleMatchingKeys.code,
+]);
+
+/**
+ * D-MCP-3, paso 2: el token verificado en el proceso, o `null` si no pasa. Solo un
+ * token que no verifica da `null`: una falla de la base o de las claves se
+ * relanza, y `handleMcpRequest` responde 500.
+ */
 async function verifiedClaims(token: string): Promise<z.infer<typeof claims> | null> {
+  if (!hasProtectedHeader(token)) {
+    return null;
+  }
   try {
     const payload = await verifyJwsAccessToken(token, {
       jwksFetch: () => auth.api.getJwks(),
@@ -73,8 +96,11 @@ async function verifiedClaims(token: string): Promise<z.infer<typeof claims> | n
     });
     const parsed = claims.safeParse(payload);
     return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof errors.JOSEError && !JWKS_FAILURES.has(error.code)) {
+      return null;
+    }
+    throw error;
   }
 }
 
@@ -109,30 +135,16 @@ export async function readMcpContext(request: Request): Promise<McpContextRead> 
   if (user === undefined) {
     return UNAUTHORIZED;
   }
-  const read = await readUserContext(user);
+  // Más estricto que la pantalla: una membresía inactiva no ve nada.
+  const read = await readAssistantContext(user);
   if (read.kind !== "ready") {
     return UNAUTHORIZED;
   }
   const { actor } = read.context;
-  // Más estricto que la pantalla: una membresía inactiva no ve nada.
-  if (!can(actor, "mcp.connect", { kind: "workspace", workspaceId: actor.workspaceId })) {
-    return UNAUTHORIZED;
-  }
   return {
     kind: "ready",
     context: { ...read.context, actor: { ...actor, oauthClientId: verified.azp } },
-    grant: {
-      userId: verified.sub,
-      clientId: verified.azp,
-      scopes,
-      expiresAt: verified.exp,
-    },
   };
-}
-
-/** D-MCP-2: la dirección de los metadatos del recurso, con el camino del recurso. */
-function resourceMetadataUrl(): string {
-  return `${new URL(mcpResourceUrl()).origin}/.well-known/oauth-protected-resource/api/mcp`;
 }
 
 /**

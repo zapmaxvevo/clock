@@ -3,7 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { failureOf, type ActionMessages } from "@/server/failure";
 import type { McpContext } from "@/server/mcp-context";
-import { dayKey, weekStartKey } from "@/server/time";
+import { dayKey, weekStartKey, wholeMinutes } from "@/server/time";
 import { timeSettingsOf } from "@/modules/profile/service";
 import { getTrackingCatalog } from "@/modules/project/service";
 import * as operations from "@/modules/time-entry/operations";
@@ -13,7 +13,6 @@ import {
   type UpdateEntryChanges,
 } from "@/modules/time-entry/schema";
 
-import { McpError } from "./service";
 import {
   createEntryToolInput,
   deleteEntryToolInput,
@@ -29,6 +28,13 @@ import {
   stopTimerToolInput,
   stopTimerToolOutput,
   updateEntryToolInput,
+  type DeleteEntryToolOutput,
+  type EntryToolOutput,
+  type GetContextToolOutput,
+  type ListEntriesToolOutput,
+  type ListProjectsToolOutput,
+  type StartTimerToolOutput,
+  type StopTimerToolOutput,
   type ToolEntry,
   type UpdateEntryToolInput,
 } from "./schema";
@@ -61,7 +67,7 @@ export function toolEntryOf(view: TimeEntryView): ToolEntry {
     startedAt: view.startedAt,
     endedAt: view.endedAt,
     durationMinutes:
-      view.durationSeconds === null ? null : Math.floor(view.durationSeconds / 60),
+      view.durationSeconds === null ? null : wholeMinutes(view.durationSeconds),
     running: view.endedAt === null,
     project:
       view.project === null ? null : { id: view.project.id, name: view.project.name },
@@ -87,9 +93,9 @@ export function updateChangesOf(input: UpdateEntryToolInput): UpdateEntryChanges
 }
 
 /** D-MCP-9: corre el trabajo y traduce cualquier error con `failureOf`. */
-export async function runTool<T>(
+export async function runTool<T, Out extends Record<string, unknown>>(
   work: () => Promise<T>,
-  present: (value: T) => Record<string, unknown>,
+  present: (value: T) => Out,
   messages: ActionMessages,
 ): Promise<CallToolResult> {
   try {
@@ -132,7 +138,7 @@ export function registerTools(server: McpServer, context: McpContext): void {
     () =>
       runTool(
         () => operations.getRunningEntry(context),
-        (running) => {
+        (running): GetContextToolOutput => {
           const settings = timeSettingsOf(context);
           const now = new Date();
           const today = dayKey(now, settings.timezone);
@@ -161,7 +167,7 @@ export function registerTools(server: McpServer, context: McpContext): void {
     () =>
       runTool(
         () => getTrackingCatalog(context.actor),
-        (catalog) => ({
+        (catalog): ListProjectsToolOutput => ({
           groups: catalog.groups.map((group) => ({
             client:
               group.client === null
@@ -192,13 +198,13 @@ export function registerTools(server: McpServer, context: McpContext): void {
     (input) =>
       runTool(
         () => operations.listEntriesOfPeriod(context, input),
-        (period) => ({
+        (period): ListEntriesToolOutput => ({
           timezone: timeSettingsOf(context).timezone,
           from: period.from,
           to: period.to,
           entries: period.entries.map(toolEntryOf),
           running: period.running === null ? null : toolEntryOf(period.running),
-          totalMinutes: Math.floor(period.closedSeconds / 60),
+          totalMinutes: wholeMinutes(period.closedSeconds),
           truncated: period.truncated,
         }),
         entryMessages,
@@ -220,7 +226,7 @@ export function registerTools(server: McpServer, context: McpContext): void {
             ...input,
             id: input.id ?? crypto.randomUUID(),
           }),
-        (result) => ({ entry: toolEntryOf(result.created) }),
+        (result): EntryToolOutput => ({ entry: toolEntryOf(result.created) }),
         entryMessages,
       ),
   );
@@ -241,7 +247,7 @@ export function registerTools(server: McpServer, context: McpContext): void {
             id: input.id,
             changes: updateChangesOf(input),
           }),
-        (result) => ({ entry: toolEntryOf(result.entry) }),
+        (result): EntryToolOutput => ({ entry: toolEntryOf(result.entry) }),
         entryMessages,
       ),
   );
@@ -258,7 +264,7 @@ export function registerTools(server: McpServer, context: McpContext): void {
     (input) =>
       runTool(
         () => operations.deleteEntry(context, input),
-        (result) => ({ id: result.id }),
+        (result): DeleteEntryToolOutput => ({ id: result.id }),
         entryMessages,
       ),
   );
@@ -279,7 +285,7 @@ export function registerTools(server: McpServer, context: McpContext): void {
             ...input,
             id: input.id ?? crypto.randomUUID(),
           }),
-        (result) => ({
+        (result): StartTimerToolOutput => ({
           running: toolEntryOf(result.running),
           stopped: result.stopped === null ? null : toolEntryOf(result.stopped),
         }),
@@ -297,14 +303,8 @@ export function registerTools(server: McpServer, context: McpContext): void {
     },
     (input) =>
       runTool(
-        async () => {
-          const id = input.id ?? (await operations.getRunningEntry(context))?.id;
-          if (id === undefined) {
-            throw new McpError("not_found", mcpMessages.noRunningTimer);
-          }
-          return operations.stopTimer(context, { id });
-        },
-        (result) => ({ stopped: toolEntryOf(result.stopped) }),
+        () => operations.stopRunningTimer(context, input),
+        (result): StopTimerToolOutput => ({ stopped: toolEntryOf(result.stopped) }),
         entryMessages,
       ),
   );

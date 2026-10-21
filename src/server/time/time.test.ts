@@ -53,6 +53,7 @@ import {
   weekKeyLabel,
   weekStartKey,
   weekdayLabel,
+  wholeMinutes,
   wholeMonthCount,
   canonicalTimeZone,
   clockLabel,
@@ -1058,6 +1059,20 @@ describe("durationSeconds", () => {
     expect(
       durationSeconds(new Date("2026-03-29T00:30:00Z"), new Date("2026-03-29T01:30:00Z")),
     ).toBe(3600);
+  });
+});
+
+describe("wholeMinutes", () => {
+  it("trunca al minuto entero en vez de redondear", () => {
+    expect(wholeMinutes(0)).toBe(0);
+    expect(wholeMinutes(59)).toBe(0);
+    expect(wholeMinutes(60)).toBe(1);
+    expect(wholeMinutes(119)).toBe(1);
+    expect(wholeMinutes(3600)).toBe(60);
+  });
+
+  it("nunca devuelve negativo", () => {
+    expect(wholeMinutes(-30)).toBe(0);
   });
 });
 

@@ -12,7 +12,6 @@ import { runTool, toolEntryOf, updateChangesOf } from "./tools";
 vi.mock("@/modules/time-entry/operations", () => ({}));
 vi.mock("@/modules/project/service", () => ({}));
 vi.mock("@/modules/profile/service", () => ({}));
-vi.mock("./service", () => ({}));
 
 afterEach(() => {
   vi.restoreAllMocks();

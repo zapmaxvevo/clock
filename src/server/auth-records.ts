@@ -15,6 +15,7 @@ import { db, type Transaction } from "@/server/db";
 import { account, session, user } from "@/server/db/schema";
 import { deleteGrantsOf } from "@/server/oauth-records";
 import type { Actor } from "@/server/permissions";
+import type { SessionUser } from "@/server/user-context";
 
 /** El `providerId` de Better Auth para Google. */
 const GOOGLE_PROVIDER_ID = "google";
@@ -177,15 +178,7 @@ export async function releaseEmailOf(
  * D-MCP-3, paso 5: la persona de un token, como la guarda `user`, o `undefined`
  * si la fila ya no existe. Solo lee, sin transacción.
  */
-export async function findSessionUser(userId: string): Promise<
-  | {
-      readonly id: string;
-      readonly email: string;
-      readonly name: string;
-      readonly image: string | null;
-    }
-  | undefined
-> {
+export async function findSessionUser(userId: string): Promise<SessionUser | undefined> {
   const rows = await db
     .select({ id: user.id, email: user.email, name: user.name, image: user.image })
     .from(user)

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { eq, sql } from "drizzle-orm";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { auth } from "@/server/auth";
@@ -17,6 +18,7 @@ import { seedInvitation, seedMember, seedWorkspace } from "@/test/factories";
 import {
   appOrigin,
   authGet,
+  authUrl,
   authorize,
   browserPostJson,
   callMcp,
@@ -37,6 +39,7 @@ import {
   type RegisteredClient,
 } from "@/test/mcp";
 import { replaceEnv, restoreEnv } from "@/test/mcp-env";
+import { seedOAuthClient } from "@/test/oauth-grants";
 
 /**
  * §9.2, `mcp-auth.integration`: el servidor de autorización por `auth.handler`.
@@ -253,6 +256,58 @@ describe("el recorrido completo (criterio 3)", () => {
     );
 
     expect((await callMcp(tokens.access_token, rpc.toolsList())).status).toBe(200);
+  });
+});
+
+describe("un token atado a DPoP no sirve como portador (RFC 9449 §7.2)", () => {
+  /** Una prueba DPoP del canje: `POST` al endpoint de tokens, firmada con una clave nueva. */
+  async function dpopProof(): Promise<string> {
+    const { privateKey, publicKey } = await generateKeyPair("ES256");
+    return new SignJWT({
+      htm: "POST",
+      htu: authUrl("/oauth2/token"),
+      jti: randomUUID(),
+    })
+      .setProtectedHeader({
+        alg: "ES256",
+        typ: "dpop+jwt",
+        jwk: await exportJWK(publicKey),
+      })
+      .setIssuedAt()
+      .sign(privateKey);
+  }
+
+  it("un canje con la cabecera DPoP emite un token que /api/mcp responde con 401", async () => {
+    const person = await seedPerson();
+    const client = await registeredClient(registrations.claudeCode());
+    const cookie = await signInCookie(person.email);
+    const { verifier, params } = authorizeParamsOf(client);
+    const consentPage = locationOf(await authorize(params, cookie));
+    const accepted = await redirectUrlOf(
+      await consent(cookie, consentPage.search.slice(1), true),
+    );
+
+    const response = await tokenRequest(
+      {
+        grant_type: "authorization_code",
+        code: accepted.searchParams.get("code") ?? "",
+        code_verifier: verifier,
+        redirect_uri: client.redirectUri,
+        resource: mcpResourceUrl(),
+        client_id: client.clientId,
+      },
+      { dpop: await dpopProof() },
+    );
+    expect(response.status).toBe(200);
+    const tokens = (await response.json()) as {
+      access_token: string;
+      token_type: string;
+    };
+    expect(tokens.token_type).toBe("DPoP");
+
+    const rejected = await callMcp(tokens.access_token, rpc.toolsList());
+    expect(rejected.status).toBe(401);
+    expect(rejected.headers.get("www-authenticate")).toContain('error="invalid_token"');
   });
 });
 
@@ -489,9 +544,12 @@ describe("autorizar exige acceso (criterio 5)", () => {
       await authorize({ ...params, redirectUri: CHATGPT }, cookie),
     );
 
+    // Sin un destino validado, el plugin manda a la página de error: `/login`.
     expect(target.origin).toBe(appOrigin());
-    expect(target.pathname).not.toBe("/conectar");
+    expect(target.pathname).toBe("/login");
+    expect(target.searchParams.get("error")).toBe("invalid_redirect");
     expect(target.searchParams.get("code")).toBeNull();
+    expect(await consentsOf(client.clientId)).toEqual([]);
   });
 
   it("una redirección que salió de MCP_REDIRECT_URIS después de registrar el cliente no se acepta", async () => {
@@ -505,8 +563,10 @@ describe("autorizar exige acceso (criterio 5)", () => {
       const target = locationOf(await authorize(params, cookie));
 
       expect(target.origin).toBe(appOrigin());
-      expect(target.pathname).not.toBe("/conectar");
+      expect(target.pathname).toBe("/login");
+      expect(target.searchParams.get("error")).toBe("invalid_redirect");
       expect(target.searchParams.get("code")).toBeNull();
+      expect(await consentsOf(client.clientId)).toEqual([]);
     } finally {
       restoreEnv(saved);
     }
@@ -526,7 +586,12 @@ describe("el plugin cargado no cambia la sesión web (criterio 16)", () => {
   });
 });
 
-/** D-MCP-2: la lista fija, con su método; cerrada con el MCP encendido y apagado. */
+/**
+ * D-MCP-2: la lista fija, con su método; cerrada con el MCP encendido y apagado.
+ * Sin `/admin/oauth2/create-client` ni `/admin/oauth2/update-client`: son
+ * `SERVER_ONLY` y por HTTP no existen con o sin `disabledPaths`; se prueban por
+ * `auth.api`.
+ */
 const CLOSED_PATHS = [
   ["POST", "/oauth2/create-client"],
   ["GET", "/oauth2/get-client"],
@@ -546,8 +611,6 @@ const CLOSED_PATHS = [
   ["POST", "/oauth2/end-session/confirm"],
   ["POST", "/oauth2/introspect"],
   ["POST", "/oauth2/continue"],
-  ["POST", "/admin/oauth2/create-client"],
-  ["POST", "/admin/oauth2/update-client"],
   ["GET", "/token"],
 ] as const;
 
@@ -570,6 +633,45 @@ describe("los endpoints cerrados (criterio 17)", () => {
       expect(response.status).toBe(404);
     },
   );
+
+  it("crear un cliente por la API del servidor, con sesión, se rechaza sin crear la fila", async () => {
+    const person = await seedPerson();
+    const headers = new Headers({ cookie: await signInCookie(person.email) });
+    const before = await clientCount();
+
+    await expect(
+      auth.api.adminCreateOAuthClient({
+        headers,
+        body: { redirect_uris: ["https://evil.example/cb"] },
+      }),
+    ).rejects.toMatchObject({ statusCode: 401 });
+    expect(await clientCount()).toBe(before);
+  });
+
+  it("editar un cliente propio por la API del servidor, con sesión, se rechaza sin cambiar la fila", async () => {
+    const person = await seedPerson();
+    const headers = new Headers({ cookie: await signInCookie(person.email) });
+    // Con dueño: el plugin deja editar al dueño si los privilegios lo permiten.
+    const clientId = await seedOAuthClient({
+      redirectUris: [CLAUDE_AI],
+      userId: person.userId,
+    });
+
+    await expect(
+      auth.api.adminUpdateOAuthClient({
+        headers,
+        body: {
+          client_id: clientId,
+          update: { redirect_uris: ["https://evil.example/cb"] },
+        },
+      }),
+    ).rejects.toMatchObject({ statusCode: 401 });
+    const rows = await db
+      .select({ redirectUris: oauthClient.redirectUris })
+      .from(oauthClient)
+      .where(eq(oauthClient.clientId, clientId));
+    expect(rows).toEqual([{ redirectUris: [CLAUDE_AI] }]);
+  });
 
   it("los recursos por la API del servidor responden el rechazo de los privilegios", async () => {
     const person = await seedPerson();

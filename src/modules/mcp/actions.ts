@@ -44,10 +44,7 @@ export async function decideConsent(
     async (session) => {
       const values = decideConsentInput.parse(input);
       if (values.accept) {
-        assertCan(session.actor, "mcp.connect", {
-          kind: "workspace",
-          workspaceId: session.actor.workspaceId,
-        });
+        assertCan(session.actor, "mcp.connect", service.workspaceResource(session.actor));
       }
       return service.decideConsent(await headers(), values);
     },

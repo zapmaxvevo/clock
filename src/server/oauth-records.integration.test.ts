@@ -31,7 +31,7 @@ async function seedPeople() {
 }
 
 describe("listGrantsOf", () => {
-  it("una fila por cliente con la unión de los alcances y el consentimiento más viejo, la más nueva primero", async () => {
+  it("una fila por cliente con el consentimiento más viejo, la más nueva primero", async () => {
     const { person } = await seedPeople();
     const older = await seedOAuthClient({
       name: "Viejo",
@@ -55,14 +55,12 @@ describe("listGrantsOf", () => {
         clientId: newer,
         clientName: null,
         redirectUris: ["http://127.0.0.1:4000/callback"],
-        scopes: ["clock", "offline_access"],
         grantedAt: new Date("2026-10-10T10:00:00Z"),
       },
       {
         clientId: older,
         clientName: "Viejo",
         redirectUris: ["https://claude.ai/api/mcp/auth_callback"],
-        scopes: ["clock", "offline_access"],
         grantedAt: new Date("2026-10-01T10:00:00Z"),
       },
     ]);

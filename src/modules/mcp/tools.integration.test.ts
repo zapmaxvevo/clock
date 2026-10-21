@@ -29,7 +29,7 @@ import { restoreEnv } from "@/test/mcp-env";
 import { timeEntryById } from "@/test/queries";
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
-import { mcpMessages, type ToolEntry } from "./schema";
+import type { ToolEntry } from "./schema";
 
 /**
  * §9.2, `tools.integration`: criterios 6 a 9 por `tools/call`, con tokens reales.
@@ -524,7 +524,7 @@ describe("los mismos errores, sin escribir (criterio 7)", () => {
       "stop_timer",
       {},
       "not_found",
-      mcpMessages.noRunningTimer,
+      timeEntryMessages.noRunningTimer,
     );
   });
 });
@@ -554,15 +554,26 @@ describe("idempotencia (criterio 8)", () => {
     },
   );
 
-  it("create_entry sin id dos veces crea dos entradas", async () => {
-    const seeded = await seedConnected();
-    const args = { date: "2026-10-14", start: "09:00", end: "10:00" };
+  it.each([
+    ["create_entry", { date: "2026-10-14", start: "09:00", end: "10:00" }, "entry"],
+    ["start_timer", {}, "running"],
+  ])(
+    "%s sin id dos veces crea dos entradas, la primera cerrada",
+    async (name, args, key) => {
+      const seeded = await seedConnected();
 
-    await callTool(seeded.grant.accessToken, "create_entry", args);
-    await callTool(seeded.grant.accessToken, "create_entry", args);
+      const first = contentOf<Record<string, ToolEntry>>(
+        await callTool(seeded.grant.accessToken, name, args),
+      );
+      await callTool(seeded.grant.accessToken, name, args);
 
-    expect(await db.select().from(timeEntry)).toHaveLength(2);
-  });
+      const rows = await db
+        .select({ id: timeEntry.id, endedAt: timeEntry.endedAt })
+        .from(timeEntry);
+      expect(rows).toHaveLength(2);
+      expect(rows.find((row) => row.id === first[key]?.id)?.endedAt).not.toBeNull();
+    },
+  );
 });
 
 describe("el audit log dice por qué cliente llegó (criterio 9)", () => {

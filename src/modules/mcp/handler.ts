@@ -89,7 +89,7 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
     if (read.kind !== "ready") {
       return mcpAuthErrorResponse(read);
     }
-    if (!(await consumeCall(read.grant.userId))) {
+    if (!(await consumeCall(read.context.actor.userId))) {
       return jsonRpcError(429, -32000, mcpMessages.rateLimited, { "Retry-After": "60" });
     }
     const response = await serve(request, read.context);
