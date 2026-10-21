@@ -34,13 +34,11 @@ import {
   type CreateTagValues,
   type CreateTaskResult,
   type CreateTaskValues,
-  type ProjectCatalog,
   type ProjectFilterCatalog,
   type ProjectListItem,
   type ProjectListView,
   type ProjectRef,
   type ProjectSettings,
-  type ProjectView,
   type TagRef,
   type TaskView,
   type TrackableProject,
@@ -81,21 +79,6 @@ function toTaskView(row: TaskRow): TaskView {
 
 function toTagRef(row: TagRow): TagRef {
   return { id: row.id, name: row.name };
-}
-
-function toProjectView(
-  actor: Actor,
-  row: ProjectWithViewer,
-  tasks: readonly TaskView[],
-): ProjectView {
-  return {
-    id: row.id,
-    name: row.name,
-    color: paletteKeyOf(row.color, row.id),
-    isPublic: row.isPublic,
-    canCreateTask: can(actor, "task.create", projectResource(row)),
-    tasks,
-  };
 }
 
 /**
@@ -545,13 +528,12 @@ type CatalogRead<Project> = {
 
 /**
  * Las consultas en un mismo snapshot y el armado en memoria: el filtro de
- * acceso es `can()` con `access` sobre cada proyecto (PR-61, PR-93), sin una
+ * acceso es `can()` con `project.track` sobre cada proyecto (TT-08), sin una
  * segunda versión en SQL que pueda desalinearse. Las etiquetas, solo con
  * `tag.view` (PR-62).
  */
 async function readCatalog<Project>(
   actor: Actor,
-  access: "project.view" | "project.track",
   toProject: (row: ProjectWithViewer, tasks: readonly TaskView[]) => Project,
 ): Promise<CatalogRead<Project>> {
   const read = await db.transaction(
@@ -570,7 +552,9 @@ async function readCatalog<Project>(
     { isolationLevel: "repeatable read" },
   );
 
-  const allowed = read.projects.filter((row) => can(actor, access, projectResource(row)));
+  const allowed = read.projects.filter((row) =>
+    can(actor, "project.track", projectResource(row)),
+  );
   // Las tareas de un proyecto descartado no salen del service.
   const tasksByProject = new Map<string, TaskRow[]>(allowed.map((row) => [row.id, []]));
   for (const row of read.tasks) {
@@ -691,21 +675,6 @@ function activeClientViews(clients: readonly ClientRow[]): ClientView[] {
   return sortedByName(clients.filter((row) => row.archivedAt === null)).map(toClientView);
 }
 
-/** La pantalla `/proyectos`: los proyectos que la persona ve. */
-export async function getProjectCatalog(actor: Actor): Promise<ProjectCatalog> {
-  const read = await readCatalog(actor, "project.view", (row, tasks) =>
-    toProjectView(actor, row, tasks),
-  );
-  return {
-    canCreateClient: can(actor, "client.create", workspaceResource(actor)),
-    canCreateProject: can(actor, "project.create", workspaceResource(actor)),
-    canCreateTag: can(actor, "tag.create", workspaceResource(actor)),
-    tags: read.tags,
-    clients: activeClientViews(read.clients),
-    groups: read.groups,
-  };
-}
-
 function toProjectRef(row: ProjectRow): ProjectRef {
   return { id: row.id, name: row.name, color: paletteKeyOf(row.color, row.id) };
 }
@@ -716,15 +685,11 @@ function toProjectRef(row: ProjectRow): ProjectRef {
  * `/proyectos` (PR-17).
  */
 export async function getTrackingCatalog(actor: Actor): Promise<TrackingCatalog> {
-  const read = await readCatalog(
-    actor,
-    "project.track",
-    (row, tasks): TrackingProjectView => ({
-      ...toProjectRef(row),
-      tasks,
-      billableByDefault: row.billableByDefault,
-    }),
-  );
+  const read = await readCatalog(actor, (row, tasks): TrackingProjectView => ({
+    ...toProjectRef(row),
+    tasks,
+    billableByDefault: row.billableByDefault,
+  }));
   const canCreateProject = can(actor, "project.create", workspaceResource(actor));
   return {
     canCreateProject,

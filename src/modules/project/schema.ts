@@ -121,37 +121,8 @@ export type ClientView = { readonly id: string; readonly name: string };
 /** Sin estado: la lectura solo devuelve tareas activas. */
 export type TaskView = { readonly id: string; readonly name: string };
 
-export type ProjectView = {
-  readonly id: string;
-  readonly name: string;
-  readonly color: PaletteKey;
-  readonly isPublic: boolean;
-  readonly canCreateTask: boolean;
-  /** Tareas activas, en orden alfabético. */
-  readonly tasks: readonly TaskView[];
-};
-
-export type ProjectGroupView = {
-  /** `null` es el grupo «Sin cliente». */
-  readonly client: ClientView | null;
-  readonly projects: readonly ProjectView[];
-};
-
 /** Lo que se muestra y se elige de una etiqueta (PR-43). */
 export type TagRef = { readonly id: string; readonly name: string };
-
-export type ProjectCatalog = {
-  readonly canCreateClient: boolean;
-  readonly canCreateProject: boolean;
-  /** PR-112: «Nueva etiqueta». */
-  readonly canCreateTag: boolean;
-  /** Las activas, en orden alfabético; vacío sin `tag.view` (PR-62, PR-60). */
-  readonly tags: readonly TagRef[];
-  /** Clientes activos del workspace, para el diálogo de proyecto. Orden alfabético. */
-  readonly clients: readonly ClientView[];
-  /** Proyectos que quien pide puede ver, agrupados por cliente. «Sin cliente» al final. */
-  readonly groups: readonly ProjectGroupView[];
-};
 
 /** Lo que una entrada muestra de su proyecto. */
 export type ProjectRef = {
@@ -191,7 +162,7 @@ export type ProjectListItem = ProjectRef & {
   readonly settings: ProjectSettings | null;
 };
 
-/** `/proyectos`: reemplaza a `ProjectCatalog`. */
+/** `/proyectos` (PR-31, D-P1-6). */
 export type ProjectListView = {
   readonly canCreateClient: boolean;
   readonly canCreateProject: boolean;
