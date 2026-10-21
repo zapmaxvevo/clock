@@ -9,10 +9,10 @@ import type {
   TimesheetDayView,
   TimesheetState,
 } from "@/modules/time-entry/schema";
+import type { DurationFormat } from "@/server/time";
 
 import { TimesheetToolbar } from "./timesheet-toolbar";
 import { TimesheetView } from "./timesheet-view";
-import type { DurationFormat } from "@/server/time";
 
 // La revalidación y el selector del rango usan el router de Next, que fuera
 // de la app no existe; las actions llegan a la base.
