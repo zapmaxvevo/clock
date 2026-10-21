@@ -167,22 +167,6 @@ export async function durationFormatOf(): Promise<DurationFormat> {
 }
 
 /**
- * Crea la fila de ajustes del workspace de los e2e si falta, con los valores
- * por omisión (D-WS2b-12). El recorrido de WS-73 la borra y la restituye en su
- * `finally`; si la corrida se corta entre las dos, la base reusada queda sin
- * fila y `setDurationFormat` se cortaría en el setup de la siguiente.
- */
-export async function ensureWorkspaceSettings(): Promise<void> {
-  await withDatabase((client) =>
-    client.query(
-      `insert into workspace_settings (workspace_id)
-       select ${FIRST_WORKSPACE}
-       on conflict (workspace_id) do nothing`,
-    ),
-  );
-}
-
-/**
  * Borra la fila de ajustes del workspace de los e2e: el estado de WS-73, que
  * la aplicación no produce. Solo lo llama el proyecto `duration-switch`, que
  * corre solo, y siempre con `restoreWorkspaceSettings` en un `finally`.
@@ -196,8 +180,10 @@ export async function deleteWorkspaceSettings(): Promise<void> {
 
 /**
  * Deja la fila de ajustes del workspace de los e2e con `format`, la haya
- * borrado `deleteWorkspaceSettings` o no. Las demás columnas quedan en su
- * valor por omisión, el único que usa la aplicación.
+ * borrado `deleteWorkspaceSettings` o no. Si la crea, las demás columnas
+ * quedan en su valor por omisión, el único que usa la aplicación. La llaman el
+ * `finally` del recorrido de WS-73 y el setup, que así arranca también después
+ * de una corrida cortada entre el borrado y ese `finally` (D-WS2b-12).
  */
 export async function restoreWorkspaceSettings(format: DurationFormat): Promise<void> {
   await updateOne(
