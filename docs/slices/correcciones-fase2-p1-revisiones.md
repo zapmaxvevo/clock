@@ -91,3 +91,18 @@ aplicó sola y se corrió el test que la tiene que matar.
 
 La relectura de `project_member` bajo el bloqueo no tiene mutación con test
 (§9.4): en P1 nadie escribe esa tabla desde la aplicación.
+
+### Paso 3
+
+`76772d3`, después de que la pantalla pasó a `getProjectList` (`76322da`):
+se borran `ProjectCatalog`, `ProjectGroupView`, `ProjectView`,
+`toProjectView` y `getProjectCatalog`, y `readCatalog` pierde el parámetro
+`access` y filtra siempre con `project.track` (§4.3, lo decide
+`backend-dev`). `edit-project-dialog.tsx` importa `changedProjectFields` de
+`project/changes.ts` para armar el parche: el navegador y el servidor
+comparan con la misma función.
+
+Corrida sobre `76772d3`, con el árbol de `frontend-dev` y `e2e-tester` ya
+commiteado: `lint`, `typecheck` y `prettier --check .` en verde; `npm test`,
+122 archivos y 2772 casos, más 309 de `test:time-ar`; `npm run
+test:integration` en `clock_p1_back`, 41 archivos y 2344 casos.
