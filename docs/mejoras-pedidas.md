@@ -22,3 +22,17 @@ se arrancan solos: cuando el usuario elija uno, pasa por el pipeline de siempre
    cliente MCP) pueda cargar, ver y editar entradas en Clock con la cuenta de
    quien lo usa. Pide decidir la autenticación (tokens personales o OAuth), qué
    herramientas expone y cómo respeta `can()` y el aislamiento por workspace.
+
+## Anotadas el 2026-10-20
+
+4. **MCP: cargar varias entradas en un lote.** Hoy el servidor MCP solo tiene
+   `create_entry`, de a una; cargar una semana a partir de un resumen son N
+   llamadas, N aprobaciones en el cliente y, si una falla a mitad, las
+   anteriores ya quedaron. El pedido: una herramienta `create_entries` que
+   reciba hasta unas 50 entradas con la misma forma de `create_entry` (cada una
+   con su `id`, así que reintentar el lote no duplica) y las cargue todas o
+   ninguna en una sola transacción. Si alguna no pasa, el error dice el índice y
+   el motivo de cada una. Queda por decidir el tope, qué pasa con un `id`
+   repetido dentro del lote y si las superposiciones entre entradas del mismo
+   lote se validan igual que contra las ya cargadas. Va después del merge de
+   `mejoras/mcp`; `create_entry` queda para las cargas sueltas.
