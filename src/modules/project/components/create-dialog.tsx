@@ -77,6 +77,10 @@ export function CreateDialogFrame({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
+    // El envío de React sube por el portal: anidado en el diálogo del
+    // calendario o en el de la edición masiva (TT-09), guardaría también el
+    // formulario de afuera.
+    event.stopPropagation();
     // «Guardar» no pasa a `disabled` mientras el pedido viaja: perdería el
     // foco, que caería a `body`. Con `aria-disabled` se ignora el envío.
     if (pending) {
