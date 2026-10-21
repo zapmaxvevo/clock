@@ -4,8 +4,7 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { CHECK_VIOLATION, constraintOf } from "@/server/db/constraint-error";
 import { workspace, workspaceSettings } from "@/server/db/schema";
-import { DURATION_FORMATS } from "@/server/time";
-import { seedWorkspace, setDurationFormat } from "@/test/factories";
+import { seedWorkspace } from "@/test/factories";
 
 /** Las columnas de `table` en la base, en el orden en que la tabla las guarda. */
 async function columnsOf(table: string): Promise<string[]> {
@@ -59,7 +58,11 @@ describe("las columnas sin efecto, borradas en la 0018 (WS0, criterio 5)", () =>
   });
 });
 
-/** El error de una escritura que la base tiene que rechazar. */
+/**
+ * El error de una escritura que la base tiene que rechazar. Local: la reversión
+ * de WS2a conserva este archivo (§2.3 de su contrato), así que importa solo lo
+ * que había antes de WS2a.
+ */
 async function rejection(work: Promise<unknown>): Promise<unknown> {
   try {
     await work;
@@ -95,11 +98,14 @@ describe("workspace_settings.duration_format, de la 0019 (WS2a, criterios 5 y 11
     expect(await durationFormatOf(workspaceId)).toBe("compact");
   });
 
-  it("acepta cada valor de DURATION_FORMATS", async () => {
+  it("acepta compact y full", async () => {
     const { workspaceId } = await seedWorkspace();
-    for (const format of DURATION_FORMATS) {
-      await setDurationFormat(workspaceId, format);
-      expect(await durationFormatOf(workspaceId)).toBe(format);
+    for (const durationFormat of ["full", "compact"]) {
+      await db
+        .update(workspaceSettings)
+        .set({ durationFormat })
+        .where(eq(workspaceSettings.workspaceId, workspaceId));
+      expect(await durationFormatOf(workspaceId)).toBe(durationFormat);
     }
   });
 

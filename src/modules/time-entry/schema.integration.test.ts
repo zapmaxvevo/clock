@@ -27,7 +27,7 @@ import {
   seedWorkspace,
   type SeededWorkspace,
 } from "@/test/factories";
-import { timeEntryById } from "@/test/queries";
+import { timeEntryById, rejection } from "@/test/queries";
 
 import { timeEntryRepository } from "./repository";
 
@@ -36,16 +36,6 @@ import { timeEntryRepository } from "./repository";
  * que rechazar o hacer aunque el service se equivoque (contrato del slice 10,
  * §2).
  */
-
-/** El error de una escritura que la base tiene que rechazar. */
-async function rejection(work: Promise<unknown>): Promise<unknown> {
-  try {
-    await work;
-  } catch (error) {
-    return error;
-  }
-  throw new Error("La base aceptó la escritura.");
-}
 
 async function violated(work: Promise<unknown>, code: string): Promise<string | null> {
   return constraintOf(await rejection(work), code);

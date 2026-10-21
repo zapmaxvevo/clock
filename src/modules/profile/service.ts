@@ -1,3 +1,4 @@
+import { knownChoice } from "@/lib/known-choice";
 import { initialsOf } from "@/lib/text";
 import { auditActorOf, recordAudit } from "@/server/audit";
 import { db } from "@/server/db";
@@ -57,22 +58,6 @@ export const PREFERENCE_DEFAULTS: Preferences = {
  */
 function resolveTimeZone(value: string | null): string {
   return value !== null && isUsableTimeZone(value) ? value : PREFERENCE_DEFAULTS.timezone;
-}
-
-/** El `check` de la base impide un valor fuera de lista; si llega, lanza. */
-function knownChoice<Choice extends string>(
-  choices: readonly Choice[],
-  value: string | null,
-  fallback: Choice,
-): Choice {
-  if (value === null) {
-    return fallback;
-  }
-  const known = choices.find((choice) => choice === value);
-  if (known === undefined) {
-    throw new RangeError(`Valor fuera de lista: ${value}.`);
-  }
-  return known;
 }
 
 /** Único lugar que aplica los predeterminados, columna por columna. */
@@ -142,7 +127,6 @@ export function timeSettingsOf(context: ProfileContext): TimeSettings {
     formats: {
       time: context.preferences.timeFormat,
       date: context.preferences.dateFormat,
-      // Del workspace, no de la persona (WS-14, ADR 0029).
       duration: context.settings.durationFormat,
     },
   };

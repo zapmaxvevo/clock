@@ -12,7 +12,7 @@ import {
 } from "@/server/db/constraint-error";
 import { auditLog, invitation } from "@/server/db/schema";
 import { seedInvitation, seedMember, seedWorkspace } from "@/test/factories";
-import { invitationOf } from "@/test/queries";
+import { invitationOf, rejection } from "@/test/queries";
 
 /**
  * La tabla `invitation` y sus migraciones (contrato de E1a, §2, criterio 20, y
@@ -41,16 +41,6 @@ async function guardStatement(): Promise<string> {
     throw new Error(`La ${migrationTag} no empieza por el bloque que corta.`);
   }
   return guard;
-}
-
-/** El error de una escritura que la base tiene que rechazar. */
-async function rejection(work: Promise<unknown>): Promise<unknown> {
-  try {
-    await work;
-  } catch (error) {
-    return error;
-  }
-  throw new Error("La base aceptó la escritura.");
 }
 
 /**

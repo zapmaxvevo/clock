@@ -12,6 +12,7 @@ import {
   workspaceSettings,
 } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
+import { DURATION_FORMATS } from "@/server/time";
 import { outcomeWhileHeld, warmPool, waitForBlockedBackends } from "@/test/concurrency";
 import {
   seedAccountLink,
@@ -472,6 +473,17 @@ describe("el formato de duración en la sesión (D-WS2a-2, criterio 5)", () => {
     const context = await enter(ownerId, "owner@empresa.com");
 
     expect(context.settings).toEqual({ durationFormat: "full" });
+  });
+
+  it("el check de la base acepta cada valor de DURATION_FORMATS, y la sesión lo trae", async () => {
+    const { workspaceId, ownerId } = await workspaceWithOwner();
+
+    // Al revés, para que la primera escritura cambie el `compact` de omisión.
+    for (const format of [...DURATION_FORMATS].reverse()) {
+      await setDurationFormat(workspaceId, format);
+      const context = await enter(ownerId, "owner@empresa.com");
+      expect(context.settings).toEqual({ durationFormat: format });
+    }
   });
 
   it("cada persona del workspace recibe el mismo formato", async () => {

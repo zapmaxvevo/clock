@@ -80,8 +80,8 @@ export const workspaceSettings = pgTable(
       .default("admins"),
     /**
      * Cómo se muestran las duraciones a todas las personas del workspace
-     * (WS-14, WS-15): `DURATION_FORMATS` de `src/server/time`. Solo cambia lo
-     * que se muestra (ADR 0029). Lo lee la sesión en cada pedido.
+     * (WS-14, WS-15): `compact` o `full`. Solo cambia lo que se muestra (ADR
+     * 0029). Lo lee la sesión en cada pedido.
      */
     durationFormat: text("duration_format").notNull().default("compact"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -29,6 +29,7 @@ import {
   seedWorkspace,
   type SeededWorkspace,
 } from "@/test/factories";
+import { rejection } from "@/test/queries";
 
 import { PALETTE_KEYS } from "./palette";
 
@@ -39,16 +40,6 @@ import { PALETTE_KEYS } from "./palette";
 
 /** Postgres: violación de clave foránea. */
 const FOREIGN_KEY_VIOLATION = "23503";
-
-/** El error de una escritura que la base tiene que rechazar. */
-async function rejection(work: Promise<unknown>): Promise<unknown> {
-  try {
-    await work;
-  } catch (error) {
-    return error;
-  }
-  throw new Error("La base aceptó la escritura.");
-}
 
 async function violated(work: Promise<unknown>, code: string): Promise<string | null> {
   return constraintOf(await rejection(work), code);

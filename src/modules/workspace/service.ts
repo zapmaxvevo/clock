@@ -1,4 +1,5 @@
 import { isCompanyEmail, normalizeEmail } from "@/lib/email";
+import { knownChoice } from "@/lib/known-choice";
 import { DomainError, RejectedError } from "@/server/errors";
 import {
   ACCOUNT_LINK_TTL_DAYS,
@@ -69,20 +70,12 @@ export function weekStartOf(context: WorkspaceContext): WeekStart {
 
 /**
  * D-WS2a-2: único lugar que aplica el valor por omisión. Sin fila, `compact`,
- * sin crearla (WS-73); fuera de `DURATION_FORMATS`, lanza. Pura.
+ * sin crearla: la sesión no se cae por un ajuste de presentación, y el error de
+ * WS-73 es de la pantalla de configuración. Fuera de `DURATION_FORMATS`, lanza.
+ * Pura.
  */
 export function resolveDurationFormat(value: string | null): DurationFormat {
-  if (value === null) {
-    // La sesión no se cae por un ajuste de presentación; el error de WS-73 es
-    // de la pantalla de configuración.
-    return "compact";
-  }
-  const known = DURATION_FORMATS.find((format) => format === value);
-  if (known === undefined) {
-    // El `check` de la base lo impide.
-    throw new RangeError(`Formato de duración fuera de lista: ${value}.`);
-  }
-  return known;
+  return knownChoice(DURATION_FORMATS, value, "compact");
 }
 
 const DEFAULT_WORKSPACE_NAME = "Workspace";
