@@ -20,7 +20,7 @@ import type { ActionFailure } from "@/hooks/use-action";
 import { projectLabels } from "./labels";
 import { useProjectNotices, useSurvivingNotice } from "./project-notices";
 
-type CreateDialogFrameProps = {
+type FormDialogFrameProps = {
   /** El título del diálogo. */
   readonly title: string;
   /** Lo que el formulario ya trae fijo, como el proyecto de una tarea. */
@@ -49,7 +49,7 @@ type CreateDialogFrameProps = {
  * arriba de «Guardar» con «Reintentar» y la regla de no cerrar mientras el
  * pedido viaja. Controlado por `open`; el foco final lo decide quien lo usa.
  */
-export function CreateDialogFrame({
+export function FormDialogFrame({
   title,
   description,
   open,
@@ -63,7 +63,7 @@ export function CreateDialogFrame({
   onRetry,
   onSave,
   children,
-}: CreateDialogFrameProps) {
+}: FormDialogFrameProps) {
   const saveRef = useRef<HTMLButtonElement>(null);
 
   function handleOpenChange(next: boolean): void {
@@ -175,8 +175,8 @@ export function CreateDialogFrame({
   );
 }
 
-type CreateDialogProps = Omit<
-  CreateDialogFrameProps,
+type FormDialogProps = Omit<
+  FormDialogFrameProps,
   "finalFocus" | "trigger" | "onClosed"
 > & {
   /**
@@ -197,7 +197,7 @@ type CreateDialogProps = Omit<
  * vuelta al botón al cerrarse y el aviso que sobrevive si el diálogo sale del
  * árbol.
  */
-export function CreateDialog({
+export function FormDialog({
   noticeKey,
   title,
   triggerLabel = title,
@@ -207,13 +207,13 @@ export function CreateDialog({
   onOpenChange,
   failure,
   ...frame
-}: CreateDialogProps) {
+}: FormDialogProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const { dismiss, focusTargetFor } = useProjectNotices();
   useSurvivingNotice(noticeKey, failure !== null);
 
   return (
-    <CreateDialogFrame
+    <FormDialogFrame
       {...frame}
       title={title}
       failure={failure}

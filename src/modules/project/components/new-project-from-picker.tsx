@@ -6,7 +6,7 @@ import { retryHandlerOf, useAction } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
 import { projectMessages, type ProjectRef } from "@/modules/project/schema";
 
-import { CreateDialogFrame } from "./create-dialog";
+import { FormDialogFrame } from "./form-dialog";
 import { projectLabels } from "./labels";
 import { emptyProjectDraft, ProjectFields } from "./project-fields";
 import { useCreateProjectAction, useTrackingCatalog } from "./tracking-catalog";
@@ -56,7 +56,7 @@ export function NewProjectFromPicker({
   }
 
   return (
-    <CreateDialogFrame
+    <FormDialogFrame
       title={projectLabels.newProject}
       open={open}
       onOpenChange={setOpen}
@@ -69,6 +69,6 @@ export function NewProjectFromPicker({
       onSave={handleSave}
     >
       <ProjectFields draft={draft} onChange={setDraft} clients={clients} mode="create" />
-    </CreateDialogFrame>
+    </FormDialogFrame>
   );
 }

@@ -8,7 +8,7 @@ import { retryHandlerOf, useAction } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
 import { projectMessages, type ProjectActions } from "@/modules/project/schema";
 
-import { CreateDialog } from "./create-dialog";
+import { FormDialog } from "./form-dialog";
 import { projectLabels, tagCreatedLabel } from "./labels";
 import { useProjectNotices } from "./project-notices";
 
@@ -59,7 +59,7 @@ export function NewTagDialog({ createTag }: NewTagDialogProps) {
 
   return (
     <>
-      <CreateDialog
+      <FormDialog
         noticeKey={NEW_ID_KEY}
         title={projectLabels.newTag}
         triggerVariant="outline"
@@ -80,7 +80,7 @@ export function NewTagDialog({ createTag }: NewTagDialogProps) {
             autoComplete="off"
           />
         </div>
-      </CreateDialog>
+      </FormDialog>
       {/*
         La lista ya muestra la etiqueta nueva; el anuncio la confirma fuera del
         diálogo, para que sobreviva a su cierre, como el de «Nuevo cliente».

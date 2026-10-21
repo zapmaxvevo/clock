@@ -12,7 +12,7 @@ import {
   type ProjectSettings,
 } from "@/modules/project/schema";
 
-import { CreateDialog } from "./create-dialog";
+import { FormDialog } from "./form-dialog";
 import { editProjectLabel, projectLabels } from "./labels";
 import { ProjectFields, type ProjectDraft } from "./project-fields";
 import { useProjectNotices } from "./project-notices";
@@ -100,7 +100,7 @@ export function EditProjectDialog({
   }
 
   return (
-    <CreateDialog
+    <FormDialog
       noticeKey={noticeKey}
       title={projectLabels.editProject}
       triggerLabel={projectLabels.edit}
@@ -123,6 +123,6 @@ export function EditProjectDialog({
         mode="update"
         archivedClient={archivedClient}
       />
-    </CreateDialog>
+    </FormDialog>
   );
 }

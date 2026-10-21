@@ -10,7 +10,7 @@ import {
   type ProjectActions,
 } from "@/modules/project/schema";
 
-import { CreateDialog } from "./create-dialog";
+import { FormDialog } from "./form-dialog";
 import { projectLabels } from "./labels";
 import { emptyProjectDraft, ProjectFields } from "./project-fields";
 import { useProjectNotices } from "./project-notices";
@@ -63,7 +63,7 @@ export function NewProjectDialog({ createProject, clients }: NewProjectDialogPro
   }
 
   return (
-    <CreateDialog
+    <FormDialog
       noticeKey={NEW_ID_KEY}
       title={projectLabels.newProject}
       open={open}
@@ -75,6 +75,6 @@ export function NewProjectDialog({ createProject, clients }: NewProjectDialogPro
       onSave={handleSave}
     >
       <ProjectFields draft={draft} onChange={setDraft} clients={clients} mode="create" />
-    </CreateDialog>
+    </FormDialog>
   );
 }
