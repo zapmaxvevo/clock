@@ -118,3 +118,46 @@ test:integration` en `clock_p1_back`, 41 archivos y 2344 casos.
 
 El caso nuevo del cliente en mayúsculas (criterio 6) se verificó con la
 mutación `nextValue: changes` en un worktree descartable: muere.
+
+## Frontend y e2e
+
+### Implementación
+
+| Commit    | Qué                                                                                                                                                                                                               |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `76322da` | La tabla de `/proyectos` con el buscador y el filtro (§5.1 … §5.3), la edición desde la fila (§5.5), `ProjectFields`, el marco partido y TT-09 en el selector, con el proveedor que recibe `createProject` (§5.4) |
+| `9ffb68d` | El envío del alta anidada no guarda el diálogo de afuera: el `submit` de React subía por el portal y «Guardar» en TT-09 guardaba también la entrada del calendario. Lo encontró `project-from-picker.spec.ts`     |
+
+### Mutaciones
+
+En la copia descartable `scratchpad/p1-front-e2e`, con la base
+`clock_p1_front_e2e` y el servidor en el 3561. Cada una se aplicó sola y se
+corrió el test que la tiene que matar; las de e2e, con un build propio cada una.
+
+| Mutación (§9)                                                                | Resultado                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projectListRows` sin buscar en el cliente                                   | muerta: 1 (`project-list-model.test.ts`)                                                                                                                                                      |
+| `projectListRows` sin `normalizeSearch`                                      | muerta: 2 (`project-list-model.test.ts`)                                                                                                                                                      |
+| `projectListRows` que busca también por tarea                                | muerta: 1 (`project-list-model.test.ts`, «un nombre de tarea no trae su proyecto»)                                                                                                            |
+| `projectListRows` con `noActive` antes de `noMatches`                        | muerta: 2 (`project-list-model.test.ts`)                                                                                                                                                      |
+| El marco con un solo `title` para el botón y el diálogo                      | muerta: 1 (`projects-screen.test.tsx`, «Editar» dice «Editar»)                                                                                                                                |
+| `pickerView` ofrece la opción de crear sin `canCreateProject`                | muerta: 2 (`picker-model.test.ts`, `project-picker.test.tsx`)                                                                                                                                 |
+| La opción de crear compara igual a «Sin proyecto»                            | muerta: 1 (`project-picker.test.tsx`, la opción no queda marcada)                                                                                                                             |
+| `remainingCreation` sin mirar la solo lectura                                | muerta: 1 (`picker-model.test.ts`)                                                                                                                                                            |
+| La búsqueda con `router.replace`                                             | muerta en e2e: `project-list.spec.ts`, «escribir en el buscador … sin pedir nada» (la verificó `e2e-tester`, `6d73f4a`)                                                                       |
+| El campo de búsqueda con estado local sin resincronizar                      | muerta en e2e: `project-list.spec.ts`, «al volver atrás, el buscador y la tabla siguen…»                                                                                                      |
+| Sin el foco al buscador cuando la fila editada deja de verse                 | muerta en e2e: `project-edit.spec.ts`, «si el nombre nuevo deja de coincidir con la búsqueda…»                                                                                                |
+| El selector llama a `onChange` en `onSuccess`, sin esperar al catálogo       | muerta en e2e: `project-from-picker.spec.ts`, la barra facturable                                                                                                                             |
+| `replaceState` con la navegación del filtro en vuelo (la lista de `76322da`) | muerta en e2e: `project-list.spec.ts`, «escribir mientras viaja el filtro no lo cancela» (`67e1779`)                                                                                          |
+| El envío del alta anidada sin `stopPropagation` (la de `76322da`)            | muerta en e2e: `project-from-picker.spec.ts`, el diálogo del calendario                                                                                                                       |
+| `createProject` sigue revalidando solo `"/proyectos"`                        | muerta en integración (criterio 11, tabla de backend)                                                                                                                                         |
+| **El diálogo manda la fila entera en lugar del parche**                      | **sobrevive**: `project-edit.spec.ts`, «editar solo la nota…», pasa igual, porque el service descarta lo que no cambió y la constancia nombra solo `note`. Queda hasta el e2e de `e2e-tester` |
+
+### Correcciones de las revisiones
+
+| Commit    | Hallazgo                                                                                                                                                                                                                                                 |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `f79ea94` | Mayor: escribir mientras viajaba el filtro cancelaba su `router.push` con el `replaceState`. Con la transición pendiente, el buscador actualiza solo el campo; al asentarse, un efecto escribe la búsqueda vigente si difiere de la URL, como eco propio |
+| `64268a2` | Menor: un segundo guardado con el mismo nombre no se anunciaba. El texto va en un nodo con clave propia dentro de la región `status`                                                                                                                     |
+| `1bc2fea` | Menor: en solo lectura (TT-92) quedaban vivos el alta abierta y la selección pendiente. `remainingCreation`, pura y con su test, los descarta                                                                                                            |
+| `72b2264` | Clean code: `CreateDialogFrame` y `CreateDialog` pasan a `FormDialogFrame` y `FormDialog`, en `form-dialog.tsx`                                                                                                                                          |
