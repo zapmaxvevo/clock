@@ -87,7 +87,8 @@ export function ProjectList({
   const searchRef = useRef<HTMLInputElement>(null);
   const [shownFilter, chooseFilter, navigating] = useFilterNavigation(filter);
   const [query, writeQuery] = useUrlSearch(search, shownFilter, navigating);
-  const [announcement, setAnnouncement] = useState("");
+  /** El número cambia en cada guardado: el mismo texto se vuelve a anunciar. */
+  const [announcement, setAnnouncement] = useState({ count: 0, text: "" });
   /** El proyecto recién editado, hasta saber si su fila sigue a la vista. */
   const saved = useRef<ProjectSettings | null>(null);
   const { rows, empty } = projectListRows(projects, shownFilter, query);
@@ -112,14 +113,20 @@ export function ProjectList({
 
   function handleSaved(project: ProjectSettings): void {
     saved.current = project;
-    setAnnouncement(projectSavedLabel(project.name));
+    setAnnouncement((current) => ({
+      count: current.count + 1,
+      text: projectSavedLabel(project.name),
+    }));
   }
 
   return (
     <div className="flex flex-col gap-3">
       {/* D-P1-8: la fila ya muestra lo nuevo; esto confirma la edición. */}
       <p role="status" className="text-muted-foreground text-sm empty:hidden">
-        {announcement}
+        {announcement.text === "" ? null : (
+          // Un nodo nuevo dentro de la región se anuncia aunque repita el texto.
+          <span key={announcement.count}>{announcement.text}</span>
+        )}
       </p>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <InputGroup className="max-w-72">
