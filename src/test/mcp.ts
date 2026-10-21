@@ -38,7 +38,7 @@ export const MCP_SCOPE = "clock offline_access";
 
 /**
  * Los cuerpos de registro de cada cliente (V-7). Los de claude.ai y ChatGPT son
- * los conocidos antes del preview; se reemplazan por los capturados en V-7.
+ * los de su documentación: el preview no los pudo capturar.
  */
 export const registrations = {
   /** Claude Code: sin `application_type`, loopback con puerto y cliente público. */
@@ -48,6 +48,16 @@ export const registrations = {
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
     token_endpoint_auth_method: "none",
+  }),
+  /** El cuerpo que mandó Claude Code 2.1.305 en el preview (V-7), literal. */
+  claudeCodeCaptured: () => ({
+    client_name: "Claude Code (clock-preview)",
+    redirect_uris: ["http://localhost:62450/callback"],
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    token_endpoint_auth_method: "none",
+    application_type: "native",
+    scope: "clock offline_access",
   }),
   claudeAi: () => ({
     client_name: "Claude",

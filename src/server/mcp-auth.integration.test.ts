@@ -236,6 +236,7 @@ describe("el recorrido completo (criterio 3)", () => {
   });
 
   it.each([
+    ["Claude Code 2.1.305, capturado en V-7", registrations.claudeCodeCaptured()],
     ["claude.ai, público", registrations.claudeAi()],
     ["ChatGPT, confidencial", registrations.chatgpt()],
   ])("con el cuerpo de %s, el canje emite un token que sirve", async (_client, body) => {
