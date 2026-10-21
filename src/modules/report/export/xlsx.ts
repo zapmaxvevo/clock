@@ -38,7 +38,7 @@ const DURATION_CELLS: Record<
  * muestra `####` en una duración que no entra, con el completo desde las mil
  * horas (D-WS2b-9).
  */
-const DURATION_COLUMN_WIDTH = 13;
+const DURATION_COLUMN_CHARS = 13;
 /** Excel lo muestra con el separador decimal de su configuración. */
 const HOURS_FORMAT = "0.00";
 
@@ -110,10 +110,16 @@ function addRow(
     if (bold) {
       target.font = { bold: true };
     }
-    if (cell.kind === "duration") {
-      sheet.getColumn(index + 1).width = DURATION_COLUMN_WIDTH;
-    }
   });
+}
+
+/** Los números de columna, desde 1, con al menos una duración en `rows`. */
+function durationColumnsOf(rows: readonly ExportRow[]): ReadonlySet<number> {
+  return new Set(
+    rows.flatMap((row) =>
+      row.flatMap((cell, index) => (cell.kind === "duration" ? [index + 1] : [])),
+    ),
+  );
 }
 
 /**
@@ -135,6 +141,9 @@ export async function xlsxBytesOf(
     section.rows.forEach((row, index) =>
       addRow(sheet, row, document.durationFormat, index === 0),
     );
+    for (const column of durationColumnsOf([...document.header, ...section.rows])) {
+      sheet.getColumn(column).width = DURATION_COLUMN_CHARS;
+    }
   }
   // `writeBuffer` da un `Buffer` de Node, que puede ser una vista de un
   // `ArrayBuffer` más grande: la copia es un `ArrayBuffer` propio.
