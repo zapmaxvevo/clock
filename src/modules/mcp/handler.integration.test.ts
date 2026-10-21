@@ -58,11 +58,13 @@ afterAll(() => {
 
 const RESOURCE_METADATA = `${appOrigin()}/.well-known/oauth-protected-resource/api/mcp`;
 
-/** D-MCP-8: las ocho herramientas que anuncia `tools/list`. */
+/** D-MCP-8, D-MCPE-1: las diez herramientas que anuncia `tools/list`. */
 const MCP_TOOL_NAMES = [
   "get_context",
   "list_projects",
   "list_entries",
+  "list_people",
+  "summarize_hours",
   "create_entry",
   "update_entry",
   "delete_entry",
@@ -210,10 +212,24 @@ describe("el token de acceso (criterio 3)", () => {
 
     const listed = await callMcp(grant.accessToken, rpc.toolsList());
     expect(listed.status).toBe(200);
-    const { result } = (await listed.json()) as { result: { tools: { name: string }[] } };
+    const { result } = (await listed.json()) as {
+      result: {
+        tools: {
+          name: string;
+          annotations?: Record<string, unknown>;
+          outputSchema?: { type?: unknown };
+        }[];
+      };
+    };
     expect(result.tools.map((tool) => tool.name).sort()).toEqual(
       [...MCP_TOOL_NAMES].sort(),
     );
+    // D-MCPE-6: las dos de solo lectura, con su salida declarada.
+    for (const name of ["list_people", "summarize_hours"]) {
+      const tool = result.tools.find((candidate) => candidate.name === name);
+      expect(tool?.annotations).toEqual({ readOnlyHint: true });
+      expect(tool?.outputSchema?.type).toBe("object");
+    }
   });
 });
 

@@ -11,8 +11,14 @@ import {
   timeEntryTag,
   user,
 } from "@/server/db/schema";
+import { releasedEmailOf } from "@/lib/email";
 import type * as Permissions from "@/server/permissions";
-import type { Actor, MembershipStatus, Role } from "@/server/permissions";
+import {
+  ForbiddenError,
+  type Actor,
+  type MembershipStatus,
+  type Role,
+} from "@/server/permissions";
 import { dayBuckets, monthBuckets, weekBuckets, type TimeBuckets } from "@/server/time";
 import {
   buenosAires,
@@ -46,6 +52,8 @@ import {
   reportGroupParams,
   reportRangeParams,
   reportSubgroupParams,
+  reportMessages,
+  type HoursSummaryValues,
   type ReportEntryRow,
   type ReportFilters,
   type ReportGroup,
@@ -55,8 +63,11 @@ import {
   type ReportTimeGroupBy,
 } from "./schema";
 import {
+  getHoursSummary,
+  getPeopleCatalog,
   getReportExport,
   getReportState,
+  ReportError,
   type ReportExportState,
   type ReportRequest,
   type ReportScope,
@@ -3977,4 +3988,341 @@ describe("las personas sin horas dentro del alcance (criterio 14 de R9)", () => 
       }
     });
   }
+});
+
+describe("el asistente dentro del alcance (D-MCPE-3, D-MCPE-4; ADR 0030; criterios 2, 3, 5, 6 y 13)", () => {
+  /** El pedido de la semana para `getHoursSummary`, con `levels` y `filters`. */
+  function summaryRequest(
+    levels: readonly ReportGroupBy[],
+    filters: Partial<ReportFilters> = {},
+  ): HoursSummaryValues {
+    const [groupBy = "person", ...subgroups] = levels;
+    return {
+      range: week,
+      groupBy,
+      subgroups,
+      filters: { ...NO_REPORT_FILTERS, ...filters },
+      peopleWithoutTime: false,
+    };
+  }
+
+  function hoursOf(
+    actor: Actor,
+    levels: readonly ReportGroupBy[],
+    filters?: Partial<ReportFilters>,
+  ) {
+    return getHoursSummary(actor, settings, summaryRequest(levels, filters), now);
+  }
+
+  /** El error con que corta el resumido, sin abrir la transacción si `beforeReading`. */
+  async function summaryFailure(
+    actor: Actor,
+    filters: Partial<ReportFilters>,
+    beforeReading = false,
+  ) {
+    const transaction = vi.spyOn(db, "transaction");
+    try {
+      const error: unknown = await hoursOf(actor, ["person"], filters).then(
+        () => null,
+        (rejected: unknown) => rejected,
+      );
+      if (beforeReading) {
+        expect(transaction).not.toHaveBeenCalled();
+      }
+      return error;
+    } finally {
+      transaction.mockRestore();
+    }
+  }
+
+  function expectReportError(error: unknown, code: string, message: string) {
+    expect(error).toBeInstanceOf(ReportError);
+    expect(error).toMatchObject({ code, message });
+  }
+
+  const ownerOfA = () => actorIn(a.workspaceId, a.ownerId, { role: "owner" });
+  const adminOfA = () => actorIn(a.workspaceId, a.adminId, { role: "admin" });
+
+  function selfActorOf(role: Role, userId: string) {
+    return actorIn(a.workspaceId, userId, { role });
+  }
+
+  for (const [role, actorOf] of [
+    ["owner", ownerOfA],
+    ["admin", adminOfA],
+  ] as const) {
+    it(`${role} de A: todas las personas de A, la inactiva con sus horas, y nada de B, en cada nivel y en árboles`, async () => {
+      for (const groupBy of groupBys) {
+        expect(summaryOf(await hoursOf(actorOf(), [groupBy]))).toEqual(
+          everyoneInA(groupBy),
+        );
+      }
+      for (const levels of trees) {
+        expect(treeSummaryOf(await hoursOf(actorOf(), levels))).toEqual(
+          expectedTree("everyone", levels, entriesIn(a.workspaceId)),
+        );
+      }
+    });
+  }
+
+  it("project_manager, team_manager y member: solo lo propio, sin filtro y con su propio id", async () => {
+    for (const own of selfOnlyInA()) {
+      const actor = selfActorOf(own.role, own.userId);
+      for (const groupBy of groupBys) {
+        const expected = ownSummary(groupBy, own);
+        expect(summaryOf(await hoursOf(actor, [groupBy]))).toEqual(expected);
+        expect(
+          summaryOf(await hoursOf(actor, [groupBy], { people: [own.userId] })),
+        ).toEqual(expected);
+      }
+    }
+  });
+
+  it("un owner al que can() le niega timeEntry.others.view: solo lo propio, y forbidden con un id ajeno (criterio 13)", async () => {
+    permissionOverrides.denied.push({
+      userId: a.ownerId,
+      action: "timeEntry.others.view",
+    });
+    for (const groupBy of groupBys) {
+      expect(summaryOf(await hoursOf(ownerOfA(), [groupBy]))).toEqual(
+        ownSummary(groupBy, {
+          userId: a.ownerId,
+          minutes: 10,
+          place: a.places.owner,
+          description: a.descriptions.owner,
+        }),
+      );
+    }
+    expectReportError(
+      await summaryFailure(ownerOfA(), { people: [a.memberId] }, true),
+      "forbidden",
+      reportMessages.othersForbidden,
+    );
+  });
+
+  it("el owner de B: todo B y nada de A", async () => {
+    const actor = actorIn(b.workspaceId, b.ownerId, { role: "owner" });
+    for (const levels of trees) {
+      expect(treeSummaryOf(await hoursOf(actor, levels))).toEqual(
+        expectedTree("everyone", levels, entriesIn(b.workspaceId)),
+      );
+    }
+  });
+
+  it("sin timeEntry.others.view, un id ajeno, solo o con el propio, es forbidden con othersForbidden antes de abrir la transacción", async () => {
+    for (const own of selfOnlyInA()) {
+      const actor = selfActorOf(own.role, own.userId);
+      for (const people of [[a.ownerId], [own.userId, a.inactiveId], [b.ownerId]]) {
+        expectReportError(
+          await summaryFailure(actor, { people }, true),
+          "forbidden",
+          reportMessages.othersForbidden,
+        );
+      }
+    }
+  });
+
+  it("owner y admin de A: un id de B, uno inexistente o el de una invitada son not_found con el mismo texto, sin leer los niveles", async () => {
+    const invitedId = await seedMember(a.workspaceId, "member", "invited");
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    try {
+      for (const actor of [ownerOfA(), adminOfA()]) {
+        for (const stranger of [b.ownerId, "persona-que-no-existe", invitedId]) {
+          expectReportError(
+            await summaryFailure(actor, { people: [a.memberId, stranger] }),
+            "not_found",
+            reportMessages.peopleNotFound,
+          );
+        }
+      }
+      expect(byLevels).not.toHaveBeenCalled();
+    } finally {
+      byLevels.mockRestore();
+    }
+  });
+
+  it("owner y admin de A: con una persona, solo ella; con la inactiva, sus horas e inactive", async () => {
+    for (const actor of [ownerOfA(), adminOfA()]) {
+      expect(
+        summaryOf(await hoursOf(actor, ["person"], { people: [a.memberId] })),
+      ).toEqual({
+        ...ownSummary("person", {
+          userId: a.memberId,
+          minutes: 50,
+          place: a.places.member,
+          description: a.descriptions.member,
+        }),
+        scope: "everyone",
+      });
+      expect(
+        summaryOf(await hoursOf(actor, ["person"], { people: [a.inactiveId] })),
+      ).toEqual({
+        scope: "everyone",
+        groupBy: "person",
+        totalSeconds: 60 * 60,
+        billableSeconds: 60 * 60,
+        groups: [{ userId: a.inactiveId, inactive: true, seconds: 60 * 60 }],
+      });
+    }
+  });
+
+  it("un proyecto o un cliente fuera del catálogo es not_found con su texto, también para quien ve lo propio", async () => {
+    const [projectOfB] = await db
+      .select({ id: project.id, clientId: project.clientId })
+      .from(project)
+      .where(eq(project.workspaceId, b.workspaceId));
+    const missing = "00000000-0000-4000-8000-000000000000";
+    const member = actorIn(a.workspaceId, a.memberId);
+    for (const actor of [ownerOfA(), member]) {
+      for (const projects of [[projectOfB?.id ?? missing], [a.projectId, missing]]) {
+        expectReportError(
+          await summaryFailure(actor, { projects }),
+          "not_found",
+          reportMessages.projectsNotFound,
+        );
+      }
+      for (const clients of [[projectOfB?.clientId ?? missing], [missing]]) {
+        expectReportError(
+          await summaryFailure(actor, { clients }),
+          "not_found",
+          reportMessages.clientsNotFound,
+        );
+      }
+    }
+  });
+
+  it("un member con un proyecto privado de A en el que no está: not_found", async () => {
+    const hidden = await seedProject({ workspaceId: a.workspaceId, isPublic: false });
+    expectReportError(
+      await summaryFailure(actorIn(a.workspaceId, a.memberId), { projects: [hidden.id] }),
+      "not_found",
+      reportMessages.projectsNotFound,
+    );
+    expect(
+      summaryOf(await hoursOf(ownerOfA(), ["person"], { projects: [hidden.id] })),
+    ).toMatchObject({ totalSeconds: 0, groups: [] });
+  });
+
+  it("sin report.view: ForbiddenError, no ReportError, sin abrir la transacción", async () => {
+    permissionOverrides.denied.push({ userId: a.ownerId, action: "report.view" });
+    const error = await summaryFailure(ownerOfA(), {}, true);
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(error).not.toBeInstanceOf(ReportError);
+    await expect(getPeopleCatalog(ownerOfA())).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  describe("getPeopleCatalog (D-MCPE-2)", () => {
+    /** Les pone nombre a las personas de A y de B, para leer el orden. */
+    async function nameEveryone() {
+      const named: [string, string][] = [
+        [a.ownerId, "Olga Owner"],
+        [a.adminId, "Ana Admin"],
+        [a.managerId, "Pedro Proyectos"],
+        [a.teamManagerId, "Tomás Equipo"],
+        [a.memberId, "Marta Miembro"],
+        [a.inactiveId, "Inés Inactiva"],
+        [b.ownerId, "Bruno de B"],
+      ];
+      for (const [userId, name] of named) {
+        await db.update(user).set({ name }).where(eq(user.id, userId));
+      }
+    }
+
+    async function emailOf(userId: string) {
+      const [row] = await db
+        .select({ email: user.email })
+        .from(user)
+        .where(eq(user.id, userId));
+      return row?.email ?? null;
+    }
+
+    it("owner y admin de A: todas las de A por nombre, activas e inactivas, con correos y self; ni la invitada ni nadie de B", async () => {
+      await nameEveryone();
+      await seedMember(a.workspaceId, "member", "invited");
+      for (const actor of [ownerOfA(), adminOfA()]) {
+        const catalog = await getPeopleCatalog(actor);
+        const row = async (id: string, name: string, inactive = false) => ({
+          id,
+          name,
+          email: await emailOf(id),
+          inactive,
+          self: id === actor.userId,
+        });
+        expect(catalog).toEqual({
+          scope: "everyone",
+          people: [
+            await row(a.adminId, "Ana Admin"),
+            await row(a.inactiveId, "Inés Inactiva", true),
+            await row(a.memberId, "Marta Miembro"),
+            await row(a.ownerId, "Olga Owner"),
+            await row(a.managerId, "Pedro Proyectos"),
+            await row(a.teamManagerId, "Tomás Equipo"),
+          ],
+        });
+      }
+    });
+
+    it("un correo liberado sale en null", async () => {
+      await db
+        .update(user)
+        .set({ email: releasedEmailOf(a.inactiveId) })
+        .where(eq(user.id, a.inactiveId));
+      const catalog = await getPeopleCatalog(ownerOfA());
+      expect(catalog.people.find(({ id }) => id === a.inactiveId)?.email).toBeNull();
+      expect(catalog.people.find(({ id }) => id === a.memberId)?.email).toBe(
+        await emailOf(a.memberId),
+      );
+    });
+
+    it("project_manager, team_manager y member: scope self, solo su fila y sin correo", async () => {
+      await nameEveryone();
+      for (const own of selfOnlyInA()) {
+        const catalog = await getPeopleCatalog(selfActorOf(own.role, own.userId));
+        expect(catalog.scope).toBe("self");
+        expect(catalog.people).toEqual([
+          expect.objectContaining({ id: own.userId, email: null, self: true }),
+        ]);
+      }
+    });
+
+    it("la persona de A y de B, en B: solo ella; el owner de B: las de B", async () => {
+      expect(
+        (await getPeopleCatalog(actorIn(b.workspaceId, a.memberId))).people.map(
+          ({ id }) => id,
+        ),
+      ).toEqual([a.memberId]);
+      expect(
+        (
+          await getPeopleCatalog(actorIn(b.workspaceId, b.ownerId, { role: "owner" }))
+        ).people
+          .map(({ id }) => id)
+          .sort(),
+      ).toEqual([a.memberId, b.ownerId].sort());
+    });
+
+    it("un owner al que can() le niega team.manage: scope everyone con los correos en null (criterio 3)", async () => {
+      permissionOverrides.denied.push({ userId: a.ownerId, action: "team.manage" });
+      const catalog = await getPeopleCatalog(ownerOfA());
+      expect(catalog.scope).toBe("everyone");
+      expect(catalog.people).toHaveLength(6);
+      expect(catalog.people.every(({ email }) => email === null)).toBe(true);
+    });
+
+    it("un owner al que can() le niega timeEntry.others.view: scope self, solo su fila con el correo", async () => {
+      permissionOverrides.denied.push({
+        userId: a.ownerId,
+        action: "timeEntry.others.view",
+      });
+      expect(await getPeopleCatalog(ownerOfA())).toEqual({
+        scope: "self",
+        people: [
+          expect.objectContaining({
+            id: a.ownerId,
+            email: await emailOf(a.ownerId),
+            self: true,
+          }),
+        ],
+      });
+    });
+  });
 });

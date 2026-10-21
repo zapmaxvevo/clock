@@ -243,6 +243,34 @@ describe("getConsentView (§5.1, D-MCP-15)", () => {
     });
   });
 
+  it.each([
+    ["owner", true],
+    ["admin", true],
+    ["project_manager", false],
+    ["team_manager", false],
+    ["member", false],
+  ] as const)(
+    "seesTeam de %s: %s, por timeEntry.others.view (D-MCPE-8; criterio 15)",
+    async (role, seesTeam) => {
+      const { workspaceId, ownerId } = await seedWorkspace();
+      const email =
+        role === "owner" ? `${ownerId}@empresa.com` : `${randomUUID()}@empresa.com`;
+      const userId =
+        role === "owner"
+          ? ownerId
+          : await seedMember(workspaceId, role, "active", { email });
+      const client = await registeredClient(registrations.claudeAi());
+      const { query } = await signedConsentQuery(email, client);
+
+      const view = await getConsentView(
+        await contextOf(userId, email),
+        pageParamsOf(query),
+      );
+
+      expect(view).toMatchObject({ kind: "ready", seesTeam });
+    },
+  );
+
   it("con loopback, vuelve a esta computadora", async () => {
     const { userId, email } = await seedPerson();
     const client = await registeredClient(registrations.claudeCode());
