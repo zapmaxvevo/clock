@@ -314,6 +314,52 @@ test("editar solo la nota deja una constancia con solo la nota, y guardar sin ca
   expect(await projectUpdateAuditsOf(projectId)).toHaveLength(1);
 });
 
+test("con «Editar» abierto mientras el owner renombra el proyecto, guardar solo la nota conserva el nombre nuevo", async ({
+  page,
+  email,
+  browser,
+}) => {
+  const suffix = uniqueSuffix();
+  const original = `Antes del owner ${suffix}`;
+  const renamed = `Renombrado por el owner ${suffix}`;
+  const note = `Nota del responsable ${suffix}`;
+
+  await openProjects(page);
+  await seedManagedProject(page, email, { name: original }, suffix);
+  const projectId = await projectIdOf(original);
+
+  // El responsable abre el diálogo con la fila de ese momento.
+  const dialog = await openEditDialog(page, original);
+  await expect(nameField(dialog)).toHaveValue(original);
+
+  // Mientras tanto, el owner lo renombra desde su pestaña.
+  const ownerPage = await openAsOwner(browser, suffix);
+  const ownerDialog = await openEditDialog(ownerPage, original);
+  await nameField(ownerDialog).fill(renamed);
+  await saveAndExpectSaved(ownerPage, ownerDialog, renamed);
+  await ownerPage.context().close();
+
+  // D-P1-3: el diálogo manda solo la nota, y el nombre del owner queda. Si
+  // mandara la fila entera, volvería a poner el nombre que leyó al abrir.
+  await noteField(dialog).fill(note);
+  await saveAndExpectSaved(page, dialog, renamed);
+  await expect(projectRow(page, original)).toHaveCount(0);
+
+  const audits = await projectUpdateAuditsOf(projectId);
+  expect(audits).toHaveLength(2);
+  expect(audits[0].actorEmail).toBe(OWNER_EMAIL);
+  expect(audits[0].previousValue).toEqual({ name: original });
+  expect(audits[0].nextValue).toEqual({ name: renamed });
+  expect(audits[1].actorEmail).toBe(email);
+  expect(audits[1].previousValue).toEqual({ note: "" });
+  expect(audits[1].nextValue).toEqual({ note });
+
+  await page.reload();
+  const reopened = await openEditDialog(page, renamed);
+  await expect(nameField(reopened)).toHaveValue(renamed);
+  await expect(noteField(reopened)).toHaveValue(note);
+});
+
 test("un member ve «Editar» solo en el proyecto del que es responsable, y como admin edita uno ajeno", async ({
   page,
   email,
