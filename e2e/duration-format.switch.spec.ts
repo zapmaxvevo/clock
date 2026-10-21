@@ -7,6 +7,7 @@ import {
   restoreWorkspaceSettings,
   seedPersonEntries,
   seedRunningEntry,
+  setDisplayName,
   setDurationFormat,
   setRole,
   workspaceSettingAuditsOf,
@@ -18,7 +19,7 @@ import {
   loseActionResponses,
   withServerAction,
 } from "./network";
-import { goToReportsByNav, reportTotal } from "./reports-page";
+import { goToReportsByNav, groupDuration, groupRow } from "./reports-page";
 import { expect, test } from "./session";
 import {
   chooseDurationFormat,
@@ -45,6 +46,7 @@ import {
   goToTrackerByNav,
   todayGroup,
   trackerBar,
+  uniqueSuffix,
 } from "./tracker-page";
 
 /**
@@ -119,6 +121,10 @@ test("un admin cambia el formato y las pantallas que abre después lo muestran",
 }) => {
   skipNearMidnight();
   await enterAsAdmin(page, email);
+  // Un nombre propio: el reporte de un admin es de todo el workspace, y su
+  // fila es la única que se puede afirmar.
+  const name = `Ana ${uniqueSuffix()}`;
+  await setDisplayName(email, name);
   await seedTwoEntries(email, today());
   await openSettingsInFull(page);
 
@@ -138,13 +144,14 @@ test("un admin cambia el formato y las pantallas que abre después lo muestran",
   }
   await expect(group.getByText("Total 0:03", { exact: true })).toBeVisible();
 
-  // Y de vuelta al completo: el reporte de esta semana lo muestra.
+  // Y de vuelta al completo: el reporte de esta semana, por persona, lo
+  // muestra en la fila de quien cambió el formato.
   await settingsNavLink(page).click();
   await expect(durationFormatControl(page)).toHaveText(DURATION_FORMAT_TEXTS.compact);
   await chooseDurationFormat(page, "full");
   expect(await durationFormatOf()).toBe("full");
   await goToReportsByNav(page);
-  await expect(reportTotal(page, "Total")).toHaveText("00:03:20");
+  await expect(groupDuration(groupRow(page, name))).toHaveText("00:03:20");
   expect(await workspaceSettingAuditsOf(email)).toEqual([
     FULL_TO_COMPACT,
     COMPACT_TO_FULL,
