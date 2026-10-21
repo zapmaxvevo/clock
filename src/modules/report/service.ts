@@ -1,6 +1,14 @@
+import { isReleasedEmail } from "@/lib/email";
 import { compareNames } from "@/lib/text";
 import { db, type Transaction } from "@/server/db";
-import { can, type Actor, type WorkspaceResource } from "@/server/permissions";
+import { hasCode, QUERY_CANCELED } from "@/server/db/constraint-error";
+import { DomainError } from "@/server/errors";
+import {
+  can,
+  ForbiddenError,
+  type Actor,
+  type WorkspaceResource,
+} from "@/server/permissions";
 import {
   addDaysToKey,
   bucketDays,
@@ -54,6 +62,7 @@ import {
 } from "./repository";
 import {
   DEFAULT_GROUP_BY,
+  HOURS_SUMMARY_MAX_ROWS,
   projectFilterCount,
   REPORT_EXPORT_MAX_BYTES,
   REPORT_EXPORT_MAX_ENTRIES,
@@ -63,8 +72,13 @@ import {
   REPORT_MAX_ROWS,
   REPORT_TIME_GROUP_BYS,
   reportLevelsOf,
+  reportMessages,
+  type HoursSummaryValues,
+  type PeopleCatalog,
+  type PeopleCatalogPerson,
   type ReportChart,
   type ReportEntryRow,
+  type ReportErrorCode,
   type ReportExportEntries,
   type ReportFilters,
   type ReportGroup,
@@ -75,6 +89,14 @@ import {
   type ReportState,
   type ReportTimeGroupBy,
 } from "./schema";
+
+/** Error de dominio del reporte. La herramienta lo traduce con `failureOf`. */
+export class ReportError extends DomainError<ReportErrorCode> {
+  constructor(code: ReportErrorCode, message: string) {
+    super(code, message);
+    this.name = "ReportError";
+  }
+}
 
 type ScopePeople =
   /** `timeEntry.others.view`: todas las personas del workspace, activas e inactivas (RP-02, RP-61). */
@@ -114,7 +136,43 @@ export type ReportRequest = {
   readonly peopleWithoutTime: boolean;
 };
 
-function workspaceResource(actor: Actor): WorkspaceResource {
+/**
+ * Cómo lee una puerta de entrada. `readReportState` lo recibe obligatorio y sin
+ * valor por omisión: una llamada que no elige modo no compila.
+ */
+type ReadMode = {
+  /**
+   * D-MCPE-4: las dos reglas del modo del asistente. Sin
+   * `timeEntry.others.view`, un id de persona ajeno corta con `forbidden` antes
+   * de leer (`checkOwnPeople`); y un id de persona, proyecto o cliente fuera de
+   * su catálogo corta con `not_found` en lugar de ignorarse como en la página
+   * (D-R4-5, `checkStrictFilters`).
+   */
+  readonly strictFilters: boolean;
+  /** D-R3-6, D-MCPE-5: el tope de filas de los niveles. */
+  readonly maxRows: number;
+  /** S3 de R6a, D-MCPE-6: `set local statement_timeout` en la transacción. */
+  readonly statementTimeout: boolean;
+  /** D-MCPE-6: si lee las barras; sin ellas, `chart: null`. */
+  readonly chart: boolean;
+};
+
+const PAGE_READ: ReadMode = {
+  strictFilters: false,
+  maxRows: REPORT_MAX_ROWS,
+  statementTimeout: false,
+  chart: true,
+};
+const EXPORT_READ: ReadMode = { ...PAGE_READ, statementTimeout: true };
+const ASSISTANT_READ: ReadMode = {
+  strictFilters: true,
+  maxRows: HOURS_SUMMARY_MAX_ROWS,
+  statementTimeout: true,
+  chart: false,
+};
+
+/** El recurso de `report.view` y de los permisos del workspace de quien mira. */
+export function workspaceResource(actor: Actor): WorkspaceResource {
   return { kind: "workspace", workspaceId: actor.workspaceId };
 }
 
@@ -411,8 +469,11 @@ type ReportRead = {
   readonly people: PersonOptions | null;
   /** Los filtros efectivos: los del pedido que están en el catálogo (D-R4-5). */
   readonly filters: ReportFilters;
-  /** Los tramos del gráfico con horas, con el alcance y los filtros de los niveles (D-R5-2). */
-  readonly chart: readonly BucketTotalRow[];
+  /**
+   * Los tramos del gráfico con horas, con el alcance y los filtros de los
+   * niveles (D-R5-2); `null` si el plan no lo pide (D-MCPE-6).
+   */
+  readonly chart: readonly BucketTotalRow[] | null;
   /** D-R6-3: las entradas, o que no entran sin leerlas (S1); `null` si el plan no las pide. */
   readonly entries: EntryRead | null;
   /**
@@ -529,6 +590,46 @@ function toPersonOptions(people: readonly WorkspacePerson[]): PersonOptions {
       inactive: person.status === "inactive",
     }))
     .sort(compareNames);
+}
+
+/**
+ * D-MCPE-4: en el modo estricto, un filtro efectivo más corto que el pedido es
+ * un id fuera del catálogo, en este orden: personas —solo con el alcance
+ * `everyone`, el único con catálogo de personas—, proyectos y clientes. Las
+ * listas del pedido no repiten (`checkFilters`). «Sin proyecto» no está en
+ * ningún catálogo y no se compara.
+ */
+function checkStrictFilters(
+  requested: ReportFilters,
+  effective: ReportFilters,
+  scope: Scope,
+): void {
+  if (
+    scope.people.kind === "everyone" &&
+    effective.people.length < requested.people.length
+  ) {
+    throw new ReportError("not_found", reportMessages.peopleNotFound);
+  }
+  if (effective.projects.length < requested.projects.length) {
+    throw new ReportError("not_found", reportMessages.projectsNotFound);
+  }
+  if (effective.clients.length < requested.clients.length) {
+    throw new ReportError("not_found", reportMessages.clientsNotFound);
+  }
+}
+
+/**
+ * D-MCPE-4: sin `timeEntry.others.view`, un filtro de personas con otra que
+ * no sea quien pide corta antes de abrir la transacción. Con solo la propia
+ * sigue: el alcance `self` ya es eso, y `effectiveFiltersOf` lo descarta.
+ */
+function checkOwnPeople(actor: Actor, scope: Scope, filters: ReportFilters): void {
+  if (
+    scope.people.kind === "self" &&
+    filters.people.some((userId) => userId !== actor.userId)
+  ) {
+    throw new ReportError("forbidden", reportMessages.othersForbidden);
+  }
 }
 
 /**
@@ -689,6 +790,8 @@ function groupsOf(nodes: readonly TreeNode[], below: number): ReportGroup[] {
  */
 async function readLevelsWithinLimit(
   levelCount: number,
+  /** D-R3-6, D-MCPE-5: el tope del modo. */
+  maxRows: number,
   readLevel: (depth: number, limit: number) => Promise<readonly LevelTotalRow[]>,
   /** D-R9-8: cuántas filas suma el primer nivel una vez leído; 0 sin la opción. */
   firstLevelExtra: (rows: readonly LevelTotalRow[]) => number,
@@ -696,7 +799,7 @@ async function readLevelsWithinLimit(
   const shown: (readonly LevelTotalRow[])[] = [];
   let rowsRead = 0;
   for (let depth = 1; depth <= levelCount; depth++) {
-    const budget = REPORT_MAX_ROWS - rowsRead;
+    const budget = maxRows - rowsRead;
     if (budget <= 0) {
       break;
     }
@@ -740,8 +843,8 @@ type ReadPlan = {
   readonly filters: ReportFilters;
   /** Los cortes de `span` del gráfico, en la granularidad del período (D-R5-4). */
   readonly chartPlan: ChartPlan;
-  /** D-R7-3: una exportación, con el tope de duración; la página no lo es. */
-  readonly exporting: boolean;
+  /** El de la puerta de entrada: los filtros estrictos, los topes y el gráfico. */
+  readonly mode: ReadMode;
   /** D-R6-2: la exportación que las pide lee además las entradas; la página no. */
   readonly entries: boolean;
   /** D-R9-5: la opción efectiva, que solo llega con el alcance `everyone`. */
@@ -823,9 +926,9 @@ async function readReport(
   scope: Scope,
   plan: ReadPlan,
 ): Promise<ReportRead> {
-  // S3, D-R7-3: toda exportación corre en una función con tope de duración,
-  // lea o no las entradas.
-  if (plan.exporting) {
+  // S3, D-R7-3, D-MCPE-6: toda exportación y todo resumido del asistente
+  // corren con tope de duración, lean o no las entradas.
+  if (plan.mode.statementTimeout) {
     await reportRepository.limitStatementTime(REPORT_EXPORT_STATEMENT_TIMEOUT_MS, tx);
   }
   const catalog = await getProjectFilterCatalog(tx, actor);
@@ -837,6 +940,10 @@ async function readReport(
   }
   const people = workspacePeople === null ? null : toPersonOptions(workspacePeople);
   const filters = effectiveFiltersOf(plan.filters, catalog, people);
+  // D-MCPE-4: la comprobación y la lectura son la misma foto.
+  if (plan.mode.strictFilters) {
+    checkStrictFilters(plan.filters, filters, scope);
+  }
   const filter = entryFilterOf(filters);
   // D-R4-4: las personas angostan el alcance; los otros filtros se suman a él.
   const readScope = filters.people.length > 0 ? narrowedTo(scope, filters.people) : scope;
@@ -847,6 +954,7 @@ async function readReport(
       : [];
   const levels = await readLevelsWithinLimit(
     plan.levels.length,
+    plan.mode.maxRows,
     (depth, limit) =>
       reportRepository.totalsByLevels(
         readScope,
@@ -873,11 +981,13 @@ async function readReport(
           seconds: first.reduce((sum, row) => sum + row.seconds, 0),
           billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
         };
-  const chart = await reportRepository.totalsByBucket(
-    readScope,
-    { span: plan.span, filter, ...plan.chartPlan },
-    tx,
-  );
+  const chart = plan.mode.chart
+    ? await reportRepository.totalsByBucket(
+        readScope,
+        { span: plan.span, filter, ...plan.chartPlan },
+        tx,
+      )
+    : null;
   const entries = plan.entries
     ? await readEntries(tx, readScope, { span: plan.span, filter })
     : null;
@@ -964,10 +1074,12 @@ type ReportStateRead<Entries extends EntryRead | null> =
     };
 
 /**
- * El cuerpo de `getReportState` y de `getReportExport` (D-R6-2): el mismo
- * alcance, el mismo período, las mismas invariantes y la misma foto. `null`
- * es la página; un `ReportExportRead`, una exportación, con el tope de
- * duración y, si las pide, las entradas en la misma foto (D-R7-3).
+ * El cuerpo de `getReportState`, de `getReportExport` (D-R6-2) y de
+ * `getHoursSummary`: el mismo alcance, el mismo período, las mismas
+ * invariantes y la misma foto. `null` es la página o el asistente; un
+ * `ReportExportRead`, una exportación, con las entradas en la misma foto si
+ * las pide (D-R7-3). `mode` decide los filtros estrictos, el tope de filas, el
+ * de duración y el gráfico.
  */
 async function readReportState(
   actor: Actor,
@@ -975,6 +1087,7 @@ async function readReportState(
   request: ReportRequest,
   now: Date,
   read: null,
+  mode: ReadMode,
 ): Promise<ReportStateRead<null>>;
 async function readReportState(
   actor: Actor,
@@ -982,6 +1095,7 @@ async function readReportState(
   request: ReportRequest,
   now: Date,
   read: ReportExportRead,
+  mode: ReadMode,
 ): Promise<ReportStateRead<EntryRead | null>>;
 async function readReportState(
   actor: Actor,
@@ -989,12 +1103,17 @@ async function readReportState(
   request: ReportRequest,
   now: Date,
   read: ReportExportRead | null,
+  mode: ReadMode,
 ): Promise<ReportStateRead<EntryRead | null>> {
   // RP-07: sin permiso no se lee nada.
   if (!can(actor, "report.view", workspaceResource(actor))) {
     return { kind: "forbidden" };
   }
   const scope = scopeOf(actor);
+  // D-MCPE-4: horas ajenas sin el permiso cortan antes de leer.
+  if (mode.strictFilters) {
+    checkOwnPeople(actor, scope, request.filters);
+  }
   const timeZone = settings.timezone;
   const todayKey = dayKey(now, timeZone);
   const period = reportPeriodOf(todayKey, settings, request.range);
@@ -1048,7 +1167,7 @@ async function readReportState(
         buckets,
         filters: request.filters,
         chartPlan,
-        exporting: read !== null,
+        mode,
         entries: read?.entries ?? false,
         peopleWithoutTime,
       }),
@@ -1083,7 +1202,7 @@ async function readReportState(
     groups: [...treeOf(snapshot.levels, time), ...snapshot.withoutTime],
     filters: snapshot.filters,
     filterOptions: toFilterOptions(snapshot.catalog, snapshot.people),
-    chart: chartOf(snapshot.chart, chartPlan, time),
+    chart: snapshot.chart === null ? null : chartOf(snapshot.chart, chartPlan, time),
   };
   return { kind: "ready", report, entries: snapshot.entries };
 }
@@ -1098,8 +1217,86 @@ export async function getReportState(
   request: ReportRequest,
   now: Date = new Date(),
 ): Promise<ReportState> {
-  const state = await readReportState(actor, settings, request, now, null);
+  const state = await readReportState(actor, settings, request, now, null, PAGE_READ);
   return state.kind === "forbidden" ? state : state.report;
+}
+
+/**
+ * D-MCPE-1, D-MCPE-4, D-MCPE-6: el resumido para el asistente, con
+ * `ASSISTANT_READ`. Es la única puerta del asistente a horas ajenas (ADR
+ * 0030): pasa por `scopeOf` como la página y da lo mismo que `getReportState`
+ * para el mismo pedido, salvo lo que decide el modo. La página no usa el modo
+ * estricto porque una URL armada a mano no debe romperla (D-R4-5). Sin
+ * `report.view`, `ForbiddenError`; un tope de sentencia vencido,
+ * `ReportError("timeout")`.
+ */
+export async function getHoursSummary(
+  actor: Actor,
+  settings: TimeSettings,
+  request: HoursSummaryValues,
+  now: Date = new Date(),
+): Promise<ReportReadyState> {
+  try {
+    const state = await readReportState(
+      actor,
+      settings,
+      request,
+      now,
+      null,
+      ASSISTANT_READ,
+    );
+    if (state.kind === "forbidden") {
+      throw new ForbiddenError("report.view");
+    }
+    return state.report;
+  } catch (error) {
+    if (hasCode(error, QUERY_CANCELED)) {
+      throw new ReportError("timeout", reportMessages.summaryTooSlow);
+    }
+    throw error;
+  }
+}
+
+/** D-MCPE-2: una persona del catálogo, con el correo si `seesEmails` y no está liberado. */
+function catalogPersonOf(
+  person: WorkspacePerson,
+  actor: Actor,
+  seesEmails: boolean,
+): PeopleCatalogPerson {
+  return {
+    id: person.userId,
+    name: displayNameOf({ displayName: person.displayName }, person.accountName),
+    email: seesEmails && !isReleasedEmail(person.email) ? person.email : null,
+    inactive: person.status === "inactive",
+    self: person.userId === actor.userId,
+  };
+}
+
+/**
+ * D-MCPE-2: las personas cuyas horas puede consultar `actor`: con
+ * `timeEntry.others.view`, todas las del workspace, activas e inactivas; si
+ * no, solo él. El correo, con `team.manage`, como `/equipo`. Sin
+ * `report.view`, `ForbiddenError`. Una transacción de solo lectura.
+ */
+export async function getPeopleCatalog(actor: Actor): Promise<PeopleCatalog> {
+  if (!can(actor, "report.view", workspaceResource(actor))) {
+    throw new ForbiddenError("report.view");
+  }
+  const scope = scopeOf(actor);
+  const seesEmails = can(actor, "team.manage", workspaceResource(actor));
+  const people = await db.transaction(
+    (tx) =>
+      scope.people.kind === "everyone"
+        ? listWorkspacePeople(tx, actor)
+        : listWorkspacePeople(tx, actor, [actor.userId]),
+    { accessMode: "read only" },
+  );
+  return {
+    scope: scopeLineOf(scope),
+    people: people
+      .map((person) => catalogPersonOf(person, actor, seesEmails))
+      .sort(compareNames),
+  };
 }
 
 /** D-R7-3: lo que una exportación lee además del estado de la página. */
@@ -1180,7 +1377,7 @@ export async function getReportExport(
   read: ReportExportRead,
   now: Date = new Date(),
 ): Promise<ReportExportState> {
-  const state = await readReportState(actor, settings, request, now, read);
+  const state = await readReportState(actor, settings, request, now, read, EXPORT_READ);
   if (state.kind === "forbidden") {
     return state;
   }

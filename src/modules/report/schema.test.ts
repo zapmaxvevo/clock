@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   hasReportFilters,
+  HOURS_SUMMARY_MAX_ROWS,
+  hoursSummaryInput,
   NO_REPORT_FILTERS,
   REPORT_CHART_DAILY_MAX_DAYS,
   REPORT_CHART_MAX_BARS,
@@ -1529,5 +1531,136 @@ describe("reportLevelsOf", () => {
       peopleWithoutTime: true,
     };
     expect(reportLevelsOf(grouping)).toEqual(["person", "project"]);
+  });
+});
+
+describe("hoursSummaryInput (D-MCPE-1, D-MCPE-4)", () => {
+  const base = { from: "2026-09-28", to: "2026-10-04" };
+  const uuid = (index: number) =>
+    `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+
+  it("los valores por omisión: por persona, sin subniveles, sin filtros ni personas sin horas", () => {
+    expect(hoursSummaryInput.parse(base)).toEqual({
+      range: { first: "2026-09-28", last: "2026-10-04" },
+      groupBy: "person",
+      subgroups: [],
+      filters: NO_REPORT_FILTERS,
+      peopleWithoutTime: false,
+    });
+  });
+
+  it("pasa los niveles y los filtros a un ReportRequest", () => {
+    expect(
+      hoursSummaryInput.parse({
+        ...base,
+        groupBy: "project",
+        subgroups: ["person", "date"],
+        userIds: ["AbC123", uuid(1)],
+        projectIds: [uuid(2)],
+        withoutProject: true,
+        clientIds: [uuid(3)],
+        includePeopleWithoutTime: true,
+      }),
+    ).toEqual({
+      range: { first: "2026-09-28", last: "2026-10-04" },
+      groupBy: "project",
+      subgroups: ["person", "date"],
+      filters: {
+        people: ["AbC123", uuid(1)],
+        projects: [uuid(2)],
+        withoutProject: true,
+        clients: [uuid(3)],
+      },
+      peopleWithoutTime: true,
+    });
+  });
+
+  it("366 días pasan; 367, invertido o un día que no existe, con el texto del período en to", () => {
+    expect(
+      hoursSummaryInput.safeParse({ from: "2025-10-05", to: "2026-10-05" }).success,
+    ).toBe(true);
+    const cases = [
+      [{ from: "2025-10-04", to: "2026-10-05" }, reportMessages.rangeTooLong],
+      [{ from: "2026-10-05", to: "2026-10-04" }, reportMessages.endBeforeStart],
+      [{ from: "2026-02-30", to: "2026-03-01" }, reportMessages.invalidDate],
+    ] as const;
+    for (const [range, message] of cases) {
+      const result = hoursSummaryInput.safeParse(range);
+      expect(messagesOf(result)).toEqual([message]);
+      expect(result.error?.issues[0]?.path).toEqual(["to"]);
+    }
+  });
+
+  it("los niveles repetidos, entre sí o con groupBy, con levelsRepeated; tres subniveles no pasan", () => {
+    for (const levels of [
+      { groupBy: "person", subgroups: ["person"] },
+      { groupBy: "person", subgroups: ["date", "date"] },
+    ] as const) {
+      expect(messagesOf(hoursSummaryInput.safeParse({ ...base, ...levels }))).toEqual([
+        reportMessages.levelsRepeated,
+      ]);
+    }
+    expect(
+      hoursSummaryInput.safeParse({
+        ...base,
+        groupBy: "person",
+        subgroups: ["date", "project", "tag"],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("cada filtro, de 1 a 50 sin repetir, con filterValues", () => {
+    const fifty = Array.from({ length: REPORT_MAX_FILTER_VALUES }, (_, index) =>
+      uuid(index),
+    );
+    const tooMany = [...fifty, uuid(99)];
+    for (const field of ["userIds", "projectIds", "clientIds"] as const) {
+      expect(hoursSummaryInput.safeParse({ ...base, [field]: fifty }).success).toBe(true);
+      for (const values of [[], tooMany, [uuid(1), uuid(1)]]) {
+        // `failureOf` muestra el primero; con 51 proyectos, el tope de «Sin
+        // proyecto» lo repite.
+        expect(
+          messagesOf(hoursSummaryInput.safeParse({ ...base, [field]: values }))[0],
+        ).toBe(reportMessages.filterValues);
+      }
+    }
+  });
+
+  it("50 proyectos más withoutProject pasan el tope, con filterValues en projectIds", () => {
+    const fifty = Array.from({ length: REPORT_MAX_FILTER_VALUES }, (_, index) =>
+      uuid(index),
+    );
+    const result = hoursSummaryInput.safeParse({
+      ...base,
+      projectIds: fifty,
+      withoutProject: true,
+    });
+    expect(messagesOf(result)).toEqual([reportMessages.filterValues]);
+    expect(result.error?.issues[0]?.path).toEqual(["projectIds"]);
+    expect(
+      hoursSummaryInput.safeParse({
+        ...base,
+        projectIds: fifty.slice(1),
+        withoutProject: true,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("un uuid en mayúsculas o un id de persona con otro formato no puede estar en un catálogo", () => {
+    const upper = uuid(1).toUpperCase().replace("0000-4000", "ABCD-4000");
+    expect(
+      messagesOf(hoursSummaryInput.safeParse({ ...base, projectIds: [upper] })),
+    ).toEqual([reportMessages.projectsNotFound]);
+    expect(
+      messagesOf(hoursSummaryInput.safeParse({ ...base, clientIds: [upper] })),
+    ).toEqual([reportMessages.clientsNotFound]);
+    expect(
+      messagesOf(hoursSummaryInput.safeParse({ ...base, userIds: ["con espacio"] })),
+    ).toEqual([reportMessages.peopleNotFound]);
+  });
+
+  it("el tope del asistente es menor que el de la página", () => {
+    expect(HOURS_SUMMARY_MAX_ROWS).toBe(500);
+    expect(HOURS_SUMMARY_MAX_ROWS).toBeLessThan(REPORT_MAX_ROWS);
   });
 });

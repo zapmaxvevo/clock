@@ -6,9 +6,12 @@ import {
   createEntryToolInput,
   decideConsentInput,
   listEntriesToolInput,
+  listPeopleToolOutput,
   revokeGrantInput,
   startTimerToolInput,
   stopTimerToolInput,
+  summarizeHoursToolInput,
+  summarizeHoursToolOutput,
   updateEntryToolInput,
 } from "./schema";
 
@@ -92,6 +95,109 @@ describe("las entradas de las actions", () => {
     expect(
       decideConsentInput.safeParse({ oauthQuery: "x".repeat(8193), accept: false })
         .success,
+    ).toBe(false);
+  });
+});
+
+describe("summarize_hours y list_people (D-MCPE-1, D-MCPE-5)", () => {
+  const range = { from: "2026-09-28", to: "2026-10-04" };
+
+  it("summarize_hours: from y to obligatorios, el resto opcional", () => {
+    expect(summarizeHoursToolInput.safeParse(range).success).toBe(true);
+    expect(summarizeHoursToolInput.safeParse({ from: range.from }).success).toBe(false);
+    expect(
+      summarizeHoursToolInput.safeParse({
+        ...range,
+        groupBy: "person",
+        subgroups: ["date", "description"],
+        userIds: ["AbC123"],
+        projectIds: [ID],
+        withoutProject: true,
+        clientIds: [ID],
+        includePeopleWithoutTime: true,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("summarize_hours: niveles conocidos, hasta dos subniveles y listas de 1 a 50", () => {
+    for (const input of [
+      { groupBy: "persona" },
+      { subgroups: ["date", "tag", "task"] },
+      { userIds: [] },
+      { userIds: Array(51).fill("a") },
+      { projectIds: ["no-es-uuid"] },
+      { clientIds: [] },
+    ]) {
+      expect(summarizeHoursToolInput.safeParse({ ...range, ...input }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("la salida del resumido: las tres formas, con los campos propios de cada clase", () => {
+    const output = {
+      timezone: "America/Argentina/Buenos_Aires",
+      ...range,
+      scope: "everyone",
+      groupBy: "person",
+      subgroups: ["project", "description"],
+      levelsShown: 3,
+      totalMinutes: 90,
+      billableMinutes: 30,
+      groups: [
+        {
+          kind: "person",
+          key: "AbC123",
+          name: "Ana",
+          minutes: 90,
+          inactive: false,
+          children: [
+            {
+              kind: "project",
+              key: null,
+              name: null,
+              minutes: 90,
+              client: null,
+              children: [
+                {
+                  kind: "description",
+                  key: null,
+                  name: null,
+                  minutes: 90,
+                  truncated: false,
+                },
+              ],
+            },
+          ],
+        },
+        { kind: "task", key: ID, name: "Backend", minutes: 0, project: "Clock" },
+      ],
+    };
+
+    expect(summarizeHoursToolOutput.parse(output)).toEqual(output);
+    expect(
+      summarizeHoursToolOutput.safeParse({ ...output, scope: "todos" }).success,
+    ).toBe(false);
+    expect(
+      summarizeHoursToolOutput.safeParse({
+        ...output,
+        groups: [{ kind: "date", key: "2026-09-29", name: "2026-09-29", minutes: 1.5 }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("la salida de list_people", () => {
+    const output = {
+      scope: "self",
+      people: [{ id: "AbC123", name: "Ana", email: null, inactive: false, self: true }],
+    };
+
+    expect(listPeopleToolOutput.parse(output)).toEqual(output);
+    expect(
+      listPeopleToolOutput.safeParse({
+        ...output,
+        people: [{ id: "AbC123", name: "Ana", inactive: false, self: true }],
+      }).success,
     ).toBe(false);
   });
 });

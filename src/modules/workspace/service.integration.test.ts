@@ -552,17 +552,29 @@ describe("listWorkspacePeople (RP-62, RP-64; criterio 17 de R4)", () => {
   }
 
   /** Lo que se lee con el actor, en una transacción como la del reporte. */
-  function readPeople(actor: Actor) {
-    return db.transaction((tx) => listWorkspacePeople(tx, actor));
+  function readPeople(actor: Actor, userIds?: readonly string[]) {
+    return db.transaction((tx) => listWorkspacePeople(tx, actor, userIds));
+  }
+
+  async function emailOf(userId: string) {
+    const [row] = await db
+      .select({ email: user.email })
+      .from(user)
+      .where(eq(user.id, userId));
+    return row?.email;
   }
 
   it("las activas, con o sin horas, y las inactivas con su estado y los dos nombres; ni las invitadas ni las de otro workspace", async () => {
     const { workspaceId, ownerId } = await seedWorkspace();
     await renameAccount(ownerId, "Owner");
     await seedPreferences(ownerId, { displayName: "La dueña" });
-    const idleId = await seedMember(workspaceId, "member");
+    const idleId = await seedMember(workspaceId, "member", "active", {
+      email: "sin.horas@empresa.com",
+    });
     await renameAccount(idleId, "Sin horas");
-    const inactiveId = await seedMember(workspaceId, "member", "inactive");
+    const inactiveId = await seedMember(workspaceId, "member", "inactive", {
+      email: "inactiva@empresa.com",
+    });
     await renameAccount(inactiveId, "Inactiva");
     // La aplicación no produce una invitada con horas: se siembra por base.
     const invitedId = await seedMember(workspaceId, "member", "invited");
@@ -590,6 +602,7 @@ describe("listWorkspacePeople (RP-62, RP-64; criterio 17 de R4)", () => {
         userId: inactiveId,
         accountName: "Inactiva",
         displayName: null,
+        email: "inactiva@empresa.com",
         status: "inactive",
         joinedAt: expect.any(Date),
       },
@@ -597,6 +610,7 @@ describe("listWorkspacePeople (RP-62, RP-64; criterio 17 de R4)", () => {
         userId: ownerId,
         accountName: "Owner",
         displayName: "La dueña",
+        email: await emailOf(ownerId),
         status: "active",
         joinedAt: expect.any(Date),
       },
@@ -604,10 +618,34 @@ describe("listWorkspacePeople (RP-62, RP-64; criterio 17 de R4)", () => {
         userId: idleId,
         accountName: "Sin horas",
         displayName: null,
+        email: "sin.horas@empresa.com",
         status: "active",
         joinedAt: expect.any(Date),
       },
     ]);
+  });
+
+  it("con userIds, solo esas personas del workspace, activas o inactivas; ni una invitada ni una de otro workspace (D-MCPE-2)", async () => {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    const activeId = await seedMember(workspaceId, "member");
+    const inactiveId = await seedMember(workspaceId, "member", "inactive");
+    const invitedId = await seedMember(workspaceId, "member", "invited");
+    const other = await seedWorkspace();
+    const actor = actorIn(workspaceId, ownerId, { role: "owner" });
+
+    const people = await readPeople(actor, [
+      inactiveId,
+      invitedId,
+      other.ownerId,
+      "inexistente",
+    ]);
+    const own = await readPeople(actor, [ownerId]);
+
+    expect(people.map(({ userId }) => userId)).toEqual([inactiveId]);
+    expect(own.map(({ userId }) => userId)).toEqual([ownerId]);
+    expect((await readPeople(actor)).map(({ userId }) => userId).sort()).toEqual(
+      [ownerId, activeId, inactiveId].sort(),
+    );
   });
 
   it("joinedAt es membership.created_at de cada persona, no updated_at (D-R9-2; criterio 13 de R9)", async () => {

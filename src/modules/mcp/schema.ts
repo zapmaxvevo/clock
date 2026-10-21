@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { ActionErrorCode } from "@/server/errors";
+import { REPORT_GROUP_BYS, REPORT_MAX_FILTER_VALUES } from "@/modules/report/schema";
 import { DESCRIPTION_MAX, TAGS_MAX } from "@/modules/time-entry/schema";
 
 /** D-MCP-2: los alcances que pide el 401 y anuncian los metadatos. */
@@ -13,6 +14,7 @@ export const MCP_CALLS_PER_MINUTE = 120;
 export const mcpMessages = {
   unexpected: "No se pudo completar el pedido. Volvé a intentar.",
   rateLimited: "Demasiados pedidos seguidos. Esperá un minuto y volvé a intentar.",
+  batchUnsupported: "El servidor no acepta lotes JSON-RPC: mandá un mensaje por pedido.",
   grantForbidden: "No tenés permiso para hacer esto.",
   consentExpired: "El pedido de conexión venció. Volvé a conectar desde el asistente.",
   consentForbidden: "Tu acceso al workspace no permite conectar asistentes.",
@@ -101,6 +103,51 @@ export const stopTimerToolInput = z.object({
   id: z.uuid().optional().describe("El timer a detener; sin id, el que corre."),
 });
 
+const groupBy = z.enum(REPORT_GROUP_BYS);
+
+export const summarizeHoursToolInput = z.object({
+  from: dayKey,
+  to: dayKey.describe("Último día del período, incluido; hasta 366 días desde from."),
+  groupBy: groupBy
+    .optional()
+    .describe("El primer nivel de agrupación; sin el campo, person."),
+  subgroups: z
+    .array(groupBy)
+    .max(2)
+    .optional()
+    .describe("Hasta dos niveles debajo de groupBy, distintos entre sí y de groupBy."),
+  userIds: z
+    .array(z.string())
+    .min(1)
+    .max(REPORT_MAX_FILTER_VALUES)
+    .optional()
+    .describe("Ids de list_people; sin el campo, todas las personas que se pueden ver."),
+  projectIds: z
+    .array(z.uuid())
+    .min(1)
+    .max(REPORT_MAX_FILTER_VALUES)
+    .optional()
+    .describe("Ids de proyecto de list_projects o de un grupo por proyecto."),
+  withoutProject: z
+    .boolean()
+    .optional()
+    .describe(
+      "Suma las entradas sin proyecto al filtro de proyectos, o las elige solas.",
+    ),
+  clientIds: z
+    .array(z.uuid())
+    .min(1)
+    .max(REPORT_MAX_FILTER_VALUES)
+    .optional()
+    .describe("Ids de cliente de list_projects o de un grupo por cliente."),
+  includePeopleWithoutTime: z
+    .boolean()
+    .optional()
+    .describe(
+      "Con groupBy person y si se ve a todas: suma en 0 a las personas activas sin horas en el período.",
+    ),
+});
+
 export type UpdateEntryToolInput = z.output<typeof updateEntryToolInput>;
 
 // Las salidas: el `outputSchema` de cada herramienta y el tipo de su
@@ -171,6 +218,63 @@ export const startTimerToolOutput = z.object({
 });
 export const stopTimerToolOutput = z.object({ stopped: toolEntry });
 
+/** D-MCPE-2: `everyone` si se ve a todas las personas; `self`, solo lo propio. */
+const summaryScope = z.enum(["everyone", "self"]);
+
+/** D-MCPE-5: lo común a un grupo de cualquier nivel. */
+const summaryGroupFields = {
+  kind: groupBy,
+  /**
+   * El id de la persona, el proyecto, el cliente, la tarea, la etiqueta o el
+   * hash de la descripción; el primer día del tramo (AAAA-MM-DD) en date, week
+   * y month; `null` en los «Sin …».
+   */
+  key: z.string().nullable(),
+  /** El nombre, la descripción (hasta 100 caracteres) o el mismo día de key; `null` en los «Sin …». */
+  name: z.string().nullable(),
+  minutes: z.number().int(),
+  /** Solo en person (RP-61). */
+  inactive: z.boolean().optional(),
+  /** Solo en project: el nombre del cliente, o `null`. */
+  client: z.string().nullable().optional(),
+  /** Solo en task: el nombre del proyecto, o `null`. */
+  project: z.string().nullable().optional(),
+  /** Solo en description: el texto entero es más largo que name. */
+  truncated: z.boolean().optional(),
+};
+
+// D-MCPE-5: tres formas fijas, sin un esquema recursivo (V-1).
+const summaryLeaf = z.object(summaryGroupFields);
+const summaryMiddle = summaryLeaf.extend({ children: z.array(summaryLeaf).optional() });
+const summaryGroup = summaryLeaf.extend({ children: z.array(summaryMiddle).optional() });
+
+export const summarizeHoursToolOutput = z.object({
+  timezone: z.string(),
+  from: z.string(),
+  to: z.string(),
+  scope: summaryScope,
+  groupBy,
+  subgroups: z.array(groupBy),
+  /** Los niveles que entraron en el tope: menos que los pedidos si no (D-R3-6). */
+  levelsShown: z.number().int(),
+  totalMinutes: z.number().int(),
+  billableMinutes: z.number().int(),
+  groups: z.array(summaryGroup),
+});
+
+export const listPeopleToolOutput = z.object({
+  scope: summaryScope,
+  people: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string().nullable(),
+      inactive: z.boolean(),
+      self: z.boolean(),
+    }),
+  ),
+});
+
 export type GetContextToolOutput = z.infer<typeof getContextToolOutput>;
 export type ListProjectsToolOutput = z.infer<typeof listProjectsToolOutput>;
 export type ListEntriesToolOutput = z.infer<typeof listEntriesToolOutput>;
@@ -178,6 +282,9 @@ export type EntryToolOutput = z.infer<typeof entryToolOutput>;
 export type DeleteEntryToolOutput = z.infer<typeof deleteEntryToolOutput>;
 export type StartTimerToolOutput = z.infer<typeof startTimerToolOutput>;
 export type StopTimerToolOutput = z.infer<typeof stopTimerToolOutput>;
+export type SummarizeHoursToolOutput = z.infer<typeof summarizeHoursToolOutput>;
+export type ListPeopleToolOutput = z.infer<typeof listPeopleToolOutput>;
+export type SummaryGroup = z.infer<typeof summaryGroup>;
 
 // Las pantallas.
 
@@ -226,6 +333,8 @@ export type ConsentView =
       /** El host del `redirect_uri` **firmado**, o «esta computadora» si es loopback. */
       readonly returnsTo: string;
       readonly email: string;
+      /** D-MCPE-8: `timeEntry.others.view`; solo decide una oración de la pantalla. */
+      readonly seesTeam: boolean;
     };
 
 export const decideConsentInput = z.object({

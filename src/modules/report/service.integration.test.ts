@@ -43,7 +43,9 @@ import {
   REPORT_MAX_FILTER_VALUES,
   REPORT_MAX_ROWS,
   reportEntryRow,
+  reportMessages,
   reportReadyState,
+  type HoursSummaryValues,
   type ReportEntryRow,
   type ReportExportEntries,
   type ReportFilters,
@@ -58,8 +60,10 @@ import { entriesMinBytes } from "./export/entry-size";
 import { exportDocumentOf } from "./export/document";
 import { NO_ENTRY_FILTER, reportRepository, type ReportLevelRead } from "./repository";
 import {
+  getHoursSummary,
   getReportExport,
   getReportState,
+  ReportError,
   type ReportExportRead,
   type ReportRequest,
 } from "./service";
@@ -5475,5 +5479,321 @@ describe("el tope con las personas sin horas (D-R9-8; criterio 11 de R9)", () =>
     ]);
     expect(state.totalSeconds).toBe(descriptions * 60);
     expect(entryTotals).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("el resumido del asistente (D-MCPE-1, D-MCPE-5, D-MCPE-6; criterios 4, 7 a 11 y 14)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** El pedido de `getHoursSummary` con los mismos campos que `readyState`. */
+  function summaryRequest(request: Partial<ReportRequest> = {}): HoursSummaryValues {
+    return {
+      range: request.range ?? lastWeek,
+      groupBy: request.groupBy ?? "person",
+      subgroups: request.subgroups ?? [],
+      filters: request.filters ?? NO_REPORT_FILTERS,
+      peopleWithoutTime: request.peopleWithoutTime ?? false,
+    };
+  }
+
+  function summaryOf(
+    actor: Actor,
+    request: Partial<ReportRequest> = {},
+    options: { readonly settings?: TimeSettings } = {},
+  ) {
+    return getHoursSummary(
+      actor,
+      options.settings ?? settings,
+      summaryRequest(request),
+      readNow,
+    );
+  }
+
+  /** Dos personas, dos proyectos, descripciones y días distintos en `lastWeek`. */
+  async function seedTeam() {
+    const anaId = await seedJoined({ accountName: "Ana" });
+    const betoId = await seedJoined({ accountName: "Beto", status: "inactive" });
+    await seedJoined({ accountName: "Sin horas" });
+    const web = (await seedProject({ workspaceId, name: "Web" })).id;
+    const app = (await seedProject({ workspaceId, name: "App" })).id;
+    await seedClosed(anaId, "2026-09-29T13:00:00Z", 5400, {
+      projectId: web,
+      billable: true,
+      description: "Diseño",
+    });
+    await seedClosed(anaId, "2026-09-30T13:00:00Z", 1830, {
+      projectId: app,
+      description: "Diseño",
+    });
+    await seedClosed(betoId, "2026-09-29T15:00:00Z", 2700, { description: "Soporte" });
+    await seedClosed(ownerId, "2026-10-01T13:00:00Z", 659, { projectId: web });
+    return { anaId, betoId, web, app };
+  }
+
+  it("da lo mismo que getReportState para el mismo pedido, salvo el gráfico, que no lee (criterios 4 y 9)", async () => {
+    const { anaId, betoId, web } = await seedTeam();
+    const requests: Partial<ReportRequest>[] = [
+      { groupBy: "person" },
+      { groupBy: "person", subgroups: ["project"] },
+      { groupBy: "person", subgroups: ["date", "description"] },
+      { groupBy: "project", subgroups: ["person", "week"] },
+      { groupBy: "person", filters: { ...NO_REPORT_FILTERS, people: [anaId] } },
+      { groupBy: "person", filters: { ...NO_REPORT_FILTERS, people: [betoId] } },
+      {
+        groupBy: "client",
+        subgroups: ["task", "tag"],
+        filters: { ...NO_REPORT_FILTERS, projects: [web], withoutProject: true },
+      },
+      { groupBy: "person", peopleWithoutTime: true },
+    ];
+    const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
+    for (const request of requests) {
+      byBucket.mockClear();
+      const page = await readyState(owner, { range: lastWeek, ...request });
+      expect(byBucket).toHaveBeenCalledTimes(1);
+      expect(page.chart).not.toBeNull();
+
+      byBucket.mockClear();
+      const summary = await summaryOf(owner, request);
+      expect(byBucket).not.toHaveBeenCalled();
+      expect(summary).toEqual({ ...page, chart: null });
+    }
+  });
+
+  it("con includePeopleWithoutTime, las activas sin horas en 0; con otro primer nivel, ninguna", async () => {
+    await seedTeam();
+    await seedJoined({ accountName: "Inactiva sin horas", status: "inactive" });
+
+    const byPerson = await summaryOf(owner, { peopleWithoutTime: true });
+    expect(withoutTimeRows(byPerson)).toEqual([
+      ["Ana", 7230, false, false],
+      ["Beto", 2700, true, false],
+      ["Owner", 659, false, false],
+      ["Sin horas", 0, false, false],
+    ]);
+    const byProject = await summaryOf(owner, {
+      groupBy: "project",
+      peopleWithoutTime: true,
+    });
+    expect(byProject.peopleWithoutTime).toBe(false);
+    expect(byProject.groups.every((group) => group.seconds > 0)).toBe(true);
+  });
+
+  it("los días se cortan en la zona de quien pide, no en la de quien cargó (criterio 10)", async () => {
+    const madridId = await seedJoined({ accountName: "En Madrid" });
+    await seedPreferences(madridId, { timezone: madrid });
+    // El lunes 28/09 a las 23:30 en Buenos Aires; el martes 29/09 a las 04:30 en Madrid.
+    await seedClosed(madridId, "2026-09-29T02:30:00Z", 1800);
+
+    const inBuenosAires = await summaryOf(owner, { groupBy: "date" });
+    const inMadrid = await summaryOf(
+      owner,
+      { groupBy: "date" },
+      { settings: workspaceOf(madrid) },
+    );
+
+    expect(dateRows(inBuenosAires).map(([day, , seconds]) => [day, seconds])).toEqual([
+      ["2026-09-28", 1800],
+    ]);
+    expect(dateRows(inMadrid).map(([day, , seconds]) => [day, seconds])).toEqual([
+      ["2026-09-29", 1800],
+    ]);
+  });
+
+  it("el timer que corre no cuenta, propio ni ajeno (criterio 11)", async () => {
+    const anaId = await seedJoined({ accountName: "Ana" });
+    await seedClosed(anaId, "2026-09-29T13:00:00Z", 600);
+    for (const userId of [anaId, ownerId]) {
+      await seedTimeEntry({ workspaceId, userId, startedAt: "2026-09-30T13:00:00Z" });
+    }
+
+    const summary = await summaryOf(owner, { subgroups: ["date"] });
+
+    expect([summary.totalSeconds, personRows(summary)]).toEqual([600, [["Ana", 600]]]);
+  });
+
+  it("un id fuera del catálogo corta en el resumido y se sigue ignorando en la página y en la exportación (criterio 14)", async () => {
+    const { anaId, web } = await seedTeam();
+    const other = await seedWorkspace(buenosAires);
+    const otherProject = (await seedProject({ workspaceId: other.workspaceId })).id;
+    const foreign: [ReportFilters, string][] = [
+      [
+        { ...NO_REPORT_FILTERS, people: [anaId, other.ownerId] },
+        reportMessages.peopleNotFound,
+      ],
+      [
+        { ...NO_REPORT_FILTERS, projects: [web, otherProject] },
+        reportMessages.projectsNotFound,
+      ],
+    ];
+    for (const [filters, message] of foreign) {
+      const known: ReportFilters = {
+        ...filters,
+        people: filters.people.filter((id) => id === anaId),
+        projects: filters.projects.filter((id) => id === web),
+      };
+      const page = await readyState(owner, { range: lastWeek, filters });
+      expect(page).toEqual(await readyState(owner, { range: lastWeek, filters: known }));
+      expect(page.filters).toEqual(known);
+      const exported = await readyExport(owner, { range: lastWeek, filters });
+      expect(exported.report).toEqual(page);
+
+      const error: unknown = await summaryOf(owner, { filters }).catch(
+        (rejected: unknown) => rejected,
+      );
+      expect(error).toBeInstanceOf(ReportError);
+      expect(error).toMatchObject({ code: "not_found", message });
+    }
+  });
+
+  describe("el tope de 500 filas (D-MCPE-5; criterio 7)", () => {
+    const year: ReportRange = { first: "2025-01-01", last: "2025-12-31" };
+    let extraTagId: string;
+
+    /** 100 días con una entrada y cuatro etiquetas cada una: fecha → etiqueta son 500 filas. */
+    beforeEach(async () => {
+      for (let index = 1; index <= 4; index++) {
+        await seedTag({ workspaceId, name: `Tope ${index}` });
+      }
+      extraTagId = (await seedTag({ workspaceId, name: "Tope 5" })).id;
+      await db.execute(sql`
+        insert into time_entry (workspace_id, user_id, started_at, ended_at, billable)
+        select ${workspaceId}, ${ownerId},
+               timestamptz '2025-01-01 15:00:00+00' + day * interval '1 day',
+               timestamptz '2025-01-01 16:00:00+00' + day * interval '1 day',
+               false
+          from generate_series(0, 99) as day`);
+      await db.execute(sql`
+        insert into time_entry_tag (workspace_id, time_entry_id, tag_id)
+        select time_entry.workspace_id, time_entry.id, tag.id
+          from time_entry
+          join tag on tag.workspace_id = time_entry.workspace_id
+         where time_entry.workspace_id = ${workspaceId}
+           and tag.id <> ${extraTagId}`);
+    });
+
+    const request = { range: year, groupBy: "date", subgroups: ["tag"] } as const;
+
+    it("con 500 filas entran los dos niveles", async () => {
+      const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+      const summary = await summaryOf(owner, request);
+      expect([summary.levelsShown, summary.groups.length]).toEqual([2, 100]);
+      expect(summary.groups.every((day) => day.children?.length === 4)).toBe(true);
+      expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([501, 401]);
+    });
+
+    it("con 501, levelsShown 1 y ningún children; la página, con el mismo pedido, muestra los dos", async () => {
+      await db.execute(sql`
+        insert into time_entry_tag (workspace_id, time_entry_id, tag_id)
+        select workspace_id, id, ${extraTagId}
+          from time_entry
+         where workspace_id = ${workspaceId}
+         order by started_at
+         limit 1`);
+
+      const summary = await summaryOf(owner, request);
+      const page = await readyState(owner, request);
+
+      expect([summary.levelsShown, summary.subgroups, summary.groups.length]).toEqual([
+        1,
+        ["tag"],
+        100,
+      ]);
+      expect(summary.groups.some((day) => day.children !== undefined)).toBe(false);
+      expect(summary.totalSeconds).toBe(100 * 3600);
+      expect([page.levelsShown, page.groups.length]).toEqual([2, 100]);
+      expect(page.groups[0]?.children).toHaveLength(5);
+    });
+  });
+
+  describe("el tope de duración (D-MCPE-6; criterio 8)", () => {
+    it("limitStatementTime una vez, con 8000 y el Executor de las lecturas, antes de la primera", async () => {
+      await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+      const limit = vi.spyOn(reportRepository, "limitStatementTime");
+      const listClients = vi.spyOn(projectRepository, "listClients");
+      const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+
+      await summaryOf(owner);
+
+      expect(limit).toHaveBeenCalledTimes(1);
+      const [milliseconds, executor] = limit.mock.calls[0] ?? [];
+      expect(milliseconds).toBe(8000);
+      expect(executor).not.toBe(db);
+      expect([listClients.mock.calls[0]?.[0], byLevels.mock.calls[0]?.[2]]).toEqual([
+        executor,
+        executor,
+      ]);
+      expect(limit.mock.invocationCallOrder[0]).toBeLessThan(
+        Math.min(
+          ...listClients.mock.invocationCallOrder,
+          ...byLevels.mock.invocationCallOrder,
+        ),
+      );
+
+      vi.clearAllMocks();
+      await readyState(owner, { range: lastWeek });
+      expect(limit).not.toHaveBeenCalled();
+    });
+
+    it("show statement_timeout da 8s dentro de la transacción del resumido", async () => {
+      await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+      const levelsOf = reportRepository.totalsByLevels;
+      const inside: unknown[] = [];
+      vi.spyOn(reportRepository, "totalsByLevels").mockImplementation(
+        async (scope, read, tx) => {
+          const shown = await (tx ?? db).execute(sql`show statement_timeout`);
+          inside.push(shown.rows[0]?.statement_timeout);
+          return levelsOf(scope, read, tx);
+        },
+      );
+
+      await summaryOf(owner);
+
+      expect(inside).toEqual(["8s"]);
+    });
+
+    it("una sentencia cancelada con 57014 es ReportError timeout con summaryTooSlow; otro error de la base sigue igual", async () => {
+      await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+      const canceled = new Error("Failed query", {
+        cause: Object.assign(new Error("canceling statement due to statement timeout"), {
+          code: "57014",
+        }),
+      });
+      vi.spyOn(reportRepository, "totalsByLevels").mockRejectedValueOnce(canceled);
+
+      const error: unknown = await summaryOf(owner).catch(
+        (rejected: unknown) => rejected,
+      );
+
+      expect(error).toBeInstanceOf(ReportError);
+      expect(error).toMatchObject({
+        code: "timeout",
+        message: reportMessages.summaryTooSlow,
+      });
+
+      const other = new Error("Failed query", {
+        cause: Object.assign(new Error("deadlock detected"), { code: "40P01" }),
+      });
+      vi.spyOn(reportRepository, "totalsByLevels").mockRejectedValueOnce(other);
+      await expect(summaryOf(owner)).rejects.toBe(other);
+    });
+
+    it("una cancelación real por el tope responde timeout", async () => {
+      await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+      const limitOf = reportRepository.limitStatementTime;
+      vi.spyOn(reportRepository, "limitStatementTime").mockImplementation(
+        async (_milliseconds, tx) => {
+          await limitOf(1, tx);
+          await tx.execute(sql`select pg_sleep(0.05)`);
+        },
+      );
+
+      await expect(summaryOf(owner)).rejects.toMatchObject({
+        code: "timeout",
+        message: reportMessages.summaryTooSlow,
+      });
+    });
   });
 });

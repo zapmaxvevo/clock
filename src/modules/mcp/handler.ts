@@ -1,5 +1,6 @@
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { readRequestBody } from "@modelcontextprotocol/sdk/server/requestBody.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 
 import { auth } from "@/server/auth";
@@ -59,6 +60,23 @@ function isAllowedOrigin(origin: string | null): boolean {
   return allowed.includes(origin);
 }
 
+/**
+ * Si el cuerpo es un lote JSON-RPC: un arreglo. Lee una copia, con el mismo
+ * tope que el transporte; uno que no entra o no es JSON lo responde el
+ * transporte, como siempre.
+ */
+async function isBatch(request: Request): Promise<boolean> {
+  const body = await readRequestBody(request.clone(), MAX_REQUEST_BODY_BYTES);
+  if (body.tooLarge) {
+    return false;
+  }
+  try {
+    return Array.isArray(JSON.parse(body.text));
+  } catch {
+    return false;
+  }
+}
+
 /** D-MCP-7: un servidor y un transporte por pedido; no queda nada en memoria. */
 async function serve(request: Request, context: McpContext): Promise<Response> {
   const server = new McpServer(SERVER_INFO);
@@ -88,6 +106,11 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
     const read = await readMcpContext(request);
     if (read.kind !== "ready") {
       return mcpAuthErrorResponse(read);
+    }
+    // D-MCP-13: un lote correría hasta cien llamadas por un solo `POST` del
+    // tope. La versión 2025-06-18 del protocolo ya no tiene lotes.
+    if (await isBatch(request)) {
+      return jsonRpcError(400, -32600, mcpMessages.batchUnsupported);
     }
     if (!(await consumeCall(read.context.actor.userId))) {
       return jsonRpcError(429, -32000, mcpMessages.rateLimited, { "Retry-After": "60" });

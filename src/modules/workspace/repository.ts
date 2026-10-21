@@ -38,6 +38,8 @@ export type PersonRow = {
   readonly userId: string;
   readonly accountName: string;
   readonly displayName: string | null;
+  /** `user.email`, tal cual. */
+  readonly email: string;
   readonly status: MemberStatus;
   /** `membership.created_at` (D-R9-2). */
   readonly joinedAt: Date;
@@ -146,13 +148,21 @@ export const workspaceRepository = {
     return existing;
   },
 
-  /** Las membresías `active` e `inactive` del workspace, con los dos nombres. Sin orden. */
-  async listPeople(tx: Transaction, workspaceId: string): Promise<PersonRow[]> {
+  /**
+   * Las membresías `active` e `inactive` del workspace, con los dos nombres; con
+   * `userIds`, solo las de esas personas. Sin orden.
+   */
+  async listPeople(
+    tx: Transaction,
+    workspaceId: string,
+    userIds?: readonly string[],
+  ): Promise<PersonRow[]> {
     const rows = await tx
       .select({
         userId: membership.userId,
         accountName: user.name,
         displayName: userPreference.displayName,
+        email: user.email,
         status: membership.status,
         joinedAt: membership.createdAt,
       })
@@ -163,6 +173,7 @@ export const workspaceRepository = {
         and(
           eq(membership.workspaceId, workspaceId),
           inArray(membership.status, [...MEMBER_STATUSES]),
+          userIds === undefined ? undefined : inArray(membership.userId, [...userIds]),
         ),
       );
     return rows.map((row) => ({ ...row, status: memberStatusOf(row.status) }));

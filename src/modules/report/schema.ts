@@ -6,10 +6,14 @@ import {
   parseDayKey,
   type DayKeyRange,
 } from "@/server/time";
+import type { ActionErrorCode } from "@/server/errors";
 import { PALETTE_KEYS } from "@/modules/project/palette";
 
 /** RP-21, ADR 0021: el período más largo, en días, con los dos extremos. */
 export const REPORT_MAX_DAYS = 366;
+
+/** D-R4-2: cuántos valores lleva como mucho cada filtro de la URL; `sin-proyecto` cuenta. */
+export const REPORT_MAX_FILTER_VALUES = 50;
 
 export const reportMessages = {
   /** RP-34. Con el calendario de rango la interfaz no lo produce (D-R2a-4). */
@@ -21,7 +25,24 @@ export const reportMessages = {
   exportForbidden: "No podés exportar reportes.",
   /** D-R6-5: 500 de la ruta. */
   exportFailed: "No se pudo exportar el reporte. Volvé y probá de nuevo.",
+  /** D-MCPE-4: el `forbidden` de las herramientas del reporte, sin `report.view`. */
+  viewForbidden: "No podés ver reportes.",
+  /** D-MCPE-4: horas ajenas sin `timeEntry.others.view`. */
+  othersForbidden:
+    "Solo un propietario o un administrador ve las horas de otras personas.",
+  /** D-MCPE-4: un id de persona fuera del catálogo, por cualquier motivo. */
+  peopleNotFound: "Alguna de las personas pedidas no es del workspace.",
+  projectsNotFound: "Alguno de los proyectos pedidos no existe o no lo podés ver.",
+  clientsNotFound: "Alguno de los clientes pedidos no existe.",
+  /** D-MCPE-6: el tope de sentencia vencido. */
+  summaryTooSlow:
+    "El resumen tardó demasiado. Pedí un período más corto, menos niveles o menos personas.",
+  levelsRepeated: "Los niveles de agrupación no se pueden repetir.",
+  filterValues: `Cada filtro lleva de 1 a ${REPORT_MAX_FILTER_VALUES} valores, sin repetir.`,
 } as const;
+
+/** D-MCPE-4, D-MCPE-6: los códigos de `ReportError`. */
+export type ReportErrorCode = ActionErrorCode | "timeout";
 
 export type ReportRange = DayKeyRange;
 
@@ -138,6 +159,9 @@ export const reportGroupParams = z
  */
 export const REPORT_MAX_ROWS = 3000;
 
+/** D-MCPE-5: el tope de filas de los niveles de un resumido para el asistente. */
+export const HOURS_SUMMARY_MAX_ROWS = 500;
+
 /** D-R10-9: cuántos caracteres de una descripción viajan, en puntos de código como `left()`. */
 export const REPORT_DESCRIPTION_SHOWN = 100;
 
@@ -184,9 +208,6 @@ export const reportSubgroupParams = z
       ),
   )
   .transform(({ subgroups }): readonly ReportGroupBy[] => subgroups);
-
-/** D-R4-2: cuántos valores lleva como mucho cada filtro de la URL; `sin-proyecto` cuenta. */
-export const REPORT_MAX_FILTER_VALUES = 50;
 
 /** RP-26: el valor de `proyectos` que elige las entradas sin proyecto. */
 export const REPORT_WITHOUT_PROJECT = "sin-proyecto";
@@ -240,13 +261,17 @@ const LOWERCASE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
  */
 const PERSON_ID = /^[A-Za-z0-9-]{1,64}$/;
 
-/** Los valores de una lista de la URL: de uno al tope, sin repetir, cada uno con `value`. */
-function filterValues<Value extends z.ZodType<string>>(value: Value) {
+/**
+ * Los valores de una lista: de uno al tope, sin repetir, cada uno con `value`.
+ * La URL los descarta con `safeParse` y no lleva `message`; el asistente lo
+ * lee (D-MCPE-1).
+ */
+function filterValues<Value extends z.ZodType<string>>(value: Value, message?: string) {
   return z
     .array(value)
-    .min(1)
-    .max(REPORT_MAX_FILTER_VALUES)
-    .refine((values) => new Set(values).size === values.length);
+    .min(1, message)
+    .max(REPORT_MAX_FILTER_VALUES, message)
+    .refine((values) => new Set(values).size === values.length, message);
 }
 
 /**
@@ -307,6 +332,98 @@ export function reportFiltersOf(
     withoutProject: projects.success && projects.data.withoutProject,
   };
 }
+
+/** Lo que recibe `getHoursSummary`: un `ReportRequest` con el período siempre presente. */
+export type HoursSummaryValues = {
+  readonly range: ReportRange;
+  readonly groupBy: ReportGroupBy;
+  readonly subgroups: readonly ReportGroupBy[];
+  readonly filters: ReportFilters;
+  readonly peopleWithoutTime: boolean;
+};
+
+/**
+ * D-MCPE-1: el pedido de `summarize_hours`, con los textos del módulo. El
+ * período pasa por la regla de `reportRangeInput`; los ids, por los mismos
+ * formatos que la URL (`PERSON_ID`, `LOWERCASE_UUID`). Un id con otro formato
+ * no puede estar en ningún catálogo: lleva el texto de los no encontrados.
+ */
+export const hoursSummaryInput = z
+  .object({
+    from: z.string(),
+    to: z.string(),
+    groupBy: z.enum(REPORT_GROUP_BYS).default(DEFAULT_GROUP_BY),
+    subgroups: z.array(z.enum(REPORT_GROUP_BYS)).max(2).default([]),
+    userIds: filterValues(
+      z.string().regex(PERSON_ID, reportMessages.peopleNotFound),
+      reportMessages.filterValues,
+    ).optional(),
+    projectIds: filterValues(
+      z.string().regex(LOWERCASE_UUID, reportMessages.projectsNotFound),
+      reportMessages.filterValues,
+    ).optional(),
+    withoutProject: z.boolean().default(false),
+    clientIds: filterValues(
+      z.string().regex(LOWERCASE_UUID, reportMessages.clientsNotFound),
+      reportMessages.filterValues,
+    ).optional(),
+    includePeopleWithoutTime: z.boolean().default(false),
+  })
+  .superRefine((values, context) => {
+    const problem = rangeProblem({ first: values.from, last: values.to });
+    if (problem !== null) {
+      context.addIssue({ code: "custom", message: problem, path: ["to"] });
+    }
+    const levels = reportLevelsOf(values);
+    if (new Set(levels).size !== levels.length) {
+      context.addIssue({
+        code: "custom",
+        message: reportMessages.levelsRepeated,
+        path: ["subgroups"],
+      });
+    }
+    if (
+      projectFilterCount(values.projectIds ?? [], values.withoutProject) >
+      REPORT_MAX_FILTER_VALUES
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: reportMessages.filterValues,
+        path: ["projectIds"],
+      });
+    }
+  })
+  .transform((values): HoursSummaryValues => ({
+    range: { first: values.from, last: values.to },
+    groupBy: values.groupBy,
+    subgroups: values.subgroups,
+    filters: {
+      people: values.userIds ?? [],
+      clients: values.clientIds ?? [],
+      projects: values.projectIds ?? [],
+      withoutProject: values.withoutProject,
+    },
+    peopleWithoutTime: values.includePeopleWithoutTime,
+  }));
+export type HoursSummaryInput = z.input<typeof hoursSummaryInput>;
+
+/** D-MCPE-2: una persona del catálogo del asistente. */
+export type PeopleCatalogPerson = {
+  readonly id: string;
+  /** `displayNameOf`. */
+  readonly name: string;
+  /** Con `team.manage` y sin liberar; si no, `null` (D-MCPE-2). */
+  readonly email: string | null;
+  readonly inactive: boolean;
+  readonly self: boolean;
+};
+
+export type PeopleCatalog = {
+  /** El de `scopeLineOf`: `everyone` con `timeEntry.others.view`, si no `self`. */
+  readonly scope: "everyone" | "self";
+  /** En el orden de `compareNames`; con `self`, solo quien pide. */
+  readonly people: readonly PeopleCatalogPerson[];
+};
 
 const reportRangeView = z.object({ first: z.string(), last: z.string() });
 
