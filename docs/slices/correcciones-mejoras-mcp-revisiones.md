@@ -397,6 +397,10 @@ timeEntryMessages.noRunningTimer)`; el texto sale de `mcpMessages`. Las
   ese resultado. La página conserva además su corte antes de `requireSession`:
   sin él, un anónimo con el MCP apagado recibiría 307 a `/login` en vez del 404
   del criterio. El test de la página es de `mcp-fix-front` (`0a88123`).
+  **Desvío: dos cortes para lo mismo**, aceptado por el team-lead: el de la
+  página, por `env()` antes de la sesión, para el anónimo; y el de
+  `getConsentView`, por consistencia con `getGrantsView`, que la página atiende
+  con un segundo `notFound()`.
 - **T3, criterio 17, clientes por `auth.api`** (mayor). `clientPrivileges`
   pasa a `() => false`: el plugin solo lo consulta con sesión
   (`assertClientPrivileges`, y en el registro `if (session)`), así que el
