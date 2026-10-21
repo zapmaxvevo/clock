@@ -27,9 +27,11 @@ export const profileLabels = {
   /** PF-01: el primer día es de la membresía y lo edita un admin. */
   weekStart: "Primer día de la semana",
   weekStartNote: "Lo administra el equipo.",
-  /** PF-02: el formato de duración es del workspace y hoy tiene un solo valor. */
+  /**
+   * PF-02, PF-31: el formato de duración es del workspace y lo cambia su
+   * configuración; el valor lo nombra `durationFormatText` del módulo `workspace`.
+   */
   durationFormat: "Formato de duración",
-  durationValue: "Compacto (h:mm)",
   durationNote: "Lo define el workspace.",
   /** PF-46: el cuerpo del aviso de membresía desactivada, propio del perfil. */
   inactiveMessage:

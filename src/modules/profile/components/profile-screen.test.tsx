@@ -171,6 +171,15 @@ describe("ProfileScreen", () => {
     expect(comboboxesOf(timeAndDateOf(render()))).toHaveLength(3);
   });
 
+  it("PF-31: el formato de duración es el del workspace, con el mismo texto que su selector", () => {
+    const text = textOf(render({ durationFormat: "full" }));
+
+    expect(text).toContain(
+      "Formato de duraciónCompleto (hh:mm:ss)Lo define el workspace.",
+    );
+    expect(text).not.toContain("Compacto");
+  });
+
   it("con permiso no muestra el aviso de la membresía y ningún control está inactivo", () => {
     const markup = render();
 
