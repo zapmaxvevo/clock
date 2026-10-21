@@ -130,6 +130,7 @@ export function ConsentCard({
               <p className="text-sm break-words">
                 {consentLabels.body(view.clientName, view.email)}
               </p>
+              {view.seesTeam && <p className="text-sm">{consentLabels.teamBody}</p>}
               <p className="text-muted-foreground text-sm break-words">
                 {consentLabels.returnsTo(view.returnsTo)}
               </p>

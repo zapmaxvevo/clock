@@ -10,6 +10,9 @@ export const consentLabels = {
   genericTitle: "Conectar un asistente con Clock",
   body: (clientName: string, email: string) =>
     `${clientName} va a poder ver, cargar, editar y borrar tus horas, y leer tus proyectos, tareas y etiquetas, con tu cuenta (${email}).`,
+  /** D-MCPE-8: solo para quien tiene `timeEntry.others.view`, después de `body`. */
+  teamBody:
+    "Como propietario o administrador, también va a poder ver las horas de las demás personas del workspace.",
   /** D-MCP-15: el destino firmado es lo que se puede creer, y por eso va siempre. */
   returnsTo: (host: string) => `Vuelve a: ${host}`,
   revokeLater: "Podés desconectarlo cuando quieras desde tu perfil.",

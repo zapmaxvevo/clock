@@ -54,6 +54,22 @@ describe("ConsentCard", () => {
     expect(text).toContain("Podés desconectarlo cuando quieras desde tu perfil.");
   });
 
+  it("D-MCPE-8 sin `seesTeam`: no menciona las horas de las demás personas", () => {
+    expect(textOf(render(ready))).not.toContain("demás personas");
+  });
+
+  it("D-MCPE-8 con `seesTeam`: la oración del equipo en un párrafo propio, después de `body`", () => {
+    const markup = render({ ...ready, seesTeam: true });
+    const paragraphs = [...markup.matchAll(/<p[^>]*>.*?<\/p>/g)].map(([p]) => textOf(p));
+
+    expect(paragraphs).toEqual([
+      "Asistente de prueba va a poder ver, cargar, editar y borrar tus horas, y leer tus proyectos, tareas y etiquetas, con tu cuenta (ana@empresa.com).",
+      "Como propietario o administrador, también va a poder ver las horas de las demás personas del workspace.",
+      "Vuelve a: asistente.example",
+      "Podés desconectarlo cuando quieras desde tu perfil.",
+    ]);
+  });
+
   it("`ready`: «Cancelar» secundario y «Conectar» primario, sin `aria-disabled`", () => {
     const buttons = buttonsOf(render(ready));
 
