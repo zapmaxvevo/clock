@@ -12,7 +12,8 @@ import {
   setRole,
   workspaceSettingAuditsOf,
 } from "./database";
-import { addDays, minuteOfDayIn, todayIn, type CivilDay } from "./days";
+import { addDays, type CivilDay } from "./days";
+import { COUNTER, FULL_TOTAL, skipNearMidnight, today } from "./duration-format";
 import {
   dropActionRequests,
   holdActionResponses,
@@ -64,11 +65,7 @@ test.beforeEach(async () => {
   await setDurationFormat("full");
 });
 
-/** El contador del timer: las horas sin relleno, con los dos formatos (PF-22). */
-const COUNTER = /^0:\d{2}:\d{2}$/;
-
-/** El total de un día del rastreador en cada formato, con su etiqueta. */
-const FULL_TOTAL = /^Total \d{2,}:\d{2}:\d{2}$/;
+/** El total de un día del rastreador en el compacto, con su etiqueta. */
 const COMPACT_TOTAL = /^Total \d+:\d{2}$/;
 
 /** Las constancias como quedan en la base: `JSON.stringify`, sin espacios (§4.5). */
@@ -80,26 +77,6 @@ const COMPACT_TO_FULL = {
   previousValue: '{"durationFormat":"compact"}',
   nextValue: '{"durationFormat":"full"}',
 };
-
-/**
- * Minutos del comienzo y del final del día en que los recorridos con entradas
- * de hoy no corren: van de las 00:00 a las 00:06:40, y el timer sembrado
- * empezó hace diez minutos.
- */
-const DAY_START_MARGIN_MINUTES = 15;
-const DAY_END_MARGIN_MINUTES = 5;
-
-function today(): CivilDay {
-  return todayIn(PERSON_TIMEZONE);
-}
-
-function skipNearMidnight(): void {
-  const minute = minuteOfDayIn(PERSON_TIMEZONE);
-  test.skip(
-    minute < DAY_START_MARGIN_MINUTES || minute > 1440 - DAY_END_MARGIN_MINUTES,
-    "cerca de la medianoche las entradas de hoy y el timer sembrado no caen en el mismo día",
-  );
-}
 
 /** Dos entradas de 100 segundos de la persona en `day`, a las 00:00 y a las 00:05. */
 async function seedTwoEntries(email: string, day: CivilDay): Promise<void> {
