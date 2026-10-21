@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { db } from "@/server/db";
 import { CHECK_VIOLATION, constraintOf } from "@/server/db/constraint-error";
-import { workspaceSettings } from "@/server/db/schema";
+import { workspace, workspaceSettings } from "@/server/db/schema";
 import { DURATION_FORMATS } from "@/server/time";
 import { seedWorkspace, setDurationFormat } from "@/test/factories";
 
@@ -115,5 +115,49 @@ describe("workspace_settings.duration_format, de la 0019 (WS2a, criterios 5 y 11
       "workspace_settings_duration_format_known",
     );
     expect(await durationFormatOf(workspaceId)).toBe("compact");
+  });
+});
+
+describe("los check de workspace.name, de la 0019 (WS2a, D-WS2a-10, criterio 11)", () => {
+  async function nameOf(workspaceId: string): Promise<string | undefined> {
+    const rows = await db
+      .select({ name: workspace.name })
+      .from(workspace)
+      .where(eq(workspace.id, workspaceId));
+    return rows.at(0)?.name;
+  }
+
+  it.each([
+    ["vacío", "", "workspace_name_len"],
+    ["de 101 caracteres", "a".repeat(101), "workspace_name_len"],
+    ["con un blanco adelante", " x", "workspace_name_trimmed"],
+    ["con un blanco atrás", "x ", "workspace_name_trimmed"],
+  ])("rechaza un nombre %s", async (_case, name, constraint) => {
+    const { workspaceId } = await seedWorkspace();
+
+    const error = await rejection(
+      db.update(workspace).set({ name }).where(eq(workspace.id, workspaceId)),
+    );
+
+    expect(constraintOf(error, CHECK_VIOLATION)).toBe(constraint);
+    expect(await nameOf(workspaceId)).toBe("Workspace de prueba");
+  });
+
+  it("acepta un nombre de 1 y de 100 caracteres, con blancos en el medio", async () => {
+    const { workspaceId } = await seedWorkspace();
+
+    for (const name of ["x", "a".repeat(100), "run0km", "Mi workspace"]) {
+      await db.update(workspace).set({ name }).where(eq(workspace.id, workspaceId));
+      expect(await nameOf(workspaceId)).toBe(name);
+    }
+  });
+
+  it("cuenta caracteres y no bytes", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const name = "ñ".repeat(100);
+
+    await db.update(workspace).set({ name }).where(eq(workspace.id, workspaceId));
+
+    expect(await nameOf(workspaceId)).toBe(name);
   });
 });

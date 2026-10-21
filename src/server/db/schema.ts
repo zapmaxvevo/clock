@@ -42,20 +42,27 @@ export const visibilityScope = pgEnum("visibility_scope", [
   "admins",
 ]);
 
-export const workspace = pgTable("workspace", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  ownerId: text("owner_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "restrict" }),
-  /** Zona horaria del owner. Fija el día en que corren los trabajos de cron. */
-  timezone: text("timezone").notNull().default("America/Argentina/Buenos_Aires"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
+export const workspace = pgTable(
+  "workspace",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    /** Zona horaria del owner. Fija el día en que corren los trabajos de cron. */
+    timezone: text("timezone").notNull().default("America/Argentina/Buenos_Aires"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    check("workspace_name_len", sql`char_length(${table.name}) between 1 and 100`),
+    check("workspace_name_trimmed", sql`${table.name} = btrim(${table.name})`),
+  ],
+);
 
 export const workspaceSettings = pgTable(
   "workspace_settings",
