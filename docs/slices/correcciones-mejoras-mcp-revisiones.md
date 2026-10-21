@@ -481,3 +481,86 @@ lleva mutante.
   correcciones no tocan.
 - `npm audit --omit=dev --audit-level=high`: solo moderados; `jose` no suma
   avisos.
+
+## V-7 en el preview (2026-10-21)
+
+Capturado por el usuario en el preview de `mejoras/mcp-preview-3`, con Claude
+Code 2.1.305 y el commit temporal de la captura, que después se revirtió
+(`5befdd3`).
+
+**Registro (DCR)**: 201. El cuerpo, con sus campos y valores tal cual:
+
+```json
+{
+  "client_name": "Claude Code (clock-preview)",
+  "redirect_uris": ["http://localhost:62450/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none",
+  "application_type": "native",
+  "scope": "clock offline_access"
+}
+```
+
+User-Agent `Bun/1.4.4`, sin `Origin`. Es un cliente público `native` con
+loopback en `localhost`, distinto del cuerpo de la documentación que usa
+`registrations.claudeCode()` (sin `application_type`, en `127.0.0.1`): los dos
+se aceptan. El capturado es `registrations.claudeCodeCaptured()`, con el
+recorrido completo en `mcp-auth.integration.test.ts` (criterio 3).
+
+**Autorización**: `authorize` llega con `prompt=consent`, PKCE `S256`,
+`resource` y `state`. Siguen Google, `/conectar` y el canje en `/oauth2/token`
+(200), con `grant_type`, `code`, `code_verifier`, `redirect_uri`, `resource` y
+`client_id`, sin autenticación de cliente y sin `Origin`.
+
+**Recurso**: ningún pedido trae `Origin`; User-Agent `claude-code/2.1.305
+(cli)`.
+
+- Primero manda `server/discover` con `MCP-Protocol-Version: 2026-07-28`: sin
+  token, 401; con token, **400**, porque el SDK 1.32.0 no soporta esa revisión.
+  Después baja a `initialize` sin versión y usa `2025-11-25` en lo que sigue.
+  **El 400 es esperable** hasta que el SDK soporte `2026-07-28`; no es un error
+  del servidor.
+- `GET /api/mcp`: 405, y sigue por `POST`. No usa sesiones.
+- `tools/list`, `get_context`, `list_entries`, `list_projects` y
+  `create_entry`: 200.
+
+**`destructiveHint`**: al pedirle que borre una entrada, Claude Code **no pidió
+confirmación**. La anotación es una pista y la confirmación depende de los
+permisos del cliente; `mcp-rev-sec` ya había dicho que no es un control. Clock
+no depende de ella (D-MCP-8).
+
+**claude.ai y ChatGPT, sin probar.** La protección de Vercel de los previews no
+deja pasar a un cliente que no manda la cabecera de bypass. El usuario decidió
+probarlos después del merge, en producción, y espera que anden. Quedan con lo
+que dice su documentación («V-7, por la documentación de cada proveedor»).
+
+**Cómo probarlos en producción**, con la migración aplicada y el merge
+desplegado (§6.1 y §6.2 del contrato):
+
+1. `MCP_ENABLED=true` en el entorno Production de Vercel y volver a desplegar
+   el último despliegue.
+2. Con la cuenta del owner, en claude.ai y en ChatGPT, agregar un conector
+   personalizado con `https://<producción>/api/mcp`, conectar, entrar con
+   Google, ver `/conectar` con «Vuelve a: claude.ai» o «Vuelve a:
+   chatgpt.com», y «Conectar».
+3. Pedirle «¿qué horas cargué esta semana?» (`get_context` y `list_entries`).
+   En `/perfil`, las dos filas. Desconectar las dos; el pedido siguiente de
+   cada asistente pide volver a conectar. Sin horas de prueba en producción.
+4. Si uno falla, los logs de Vercel de producción muestran en qué pedido se
+   corta (los mismos pasos de arriba): un registro con 400
+   `invalid_redirect_uri` pide sumar la vuelta a `MCP_REDIRECT_URIS`; un 403 en
+   `/api/mcp`, sumar el `Origin` a `MCP_ALLOWED_ORIGINS`; las dos con la
+   variable y otro despliegue. Cualquier otra falla se corrige en un slice
+   chico.
+
+**Observación sobre Neon**: el primer pedido a la rama `preview` de Neon,
+recién despierta, dio 500 en `/oauth2/register` y en `/sign-in/social`.
+Después anduvo. No es un error del código.
+
+**Lo que esto cambia**: nada del código. `MCP_REDIRECT_URIS` (claude.ai y la
+estable de ChatGPT, más loopback) y `MCP_ALLOWED_ORIGINS` quedan como están.
+Ningún cliente necesita uno creado de antemano, un campo de metadatos, `GET` ni
+sesiones. En el contrato: D-MCP-2, D-MCP-7 (el 400 de `server/discover`),
+D-MCP-8, V-7, §4.1, §6.3 y los criterios 3 y 20, que se da por cumplido para
+Claude Code, con claude.ai y ChatGPT pendientes por decisión del usuario.
