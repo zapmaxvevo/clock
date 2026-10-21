@@ -2,7 +2,15 @@
 
 import { SearchIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useId, useOptimistic, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -77,8 +85,8 @@ export function ProjectList({
 }: ProjectListProps) {
   const searchId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
-  const [shownFilter, chooseFilter] = useFilterNavigation(filter);
-  const [query, writeQuery] = useUrlSearch(search, shownFilter);
+  const [shownFilter, chooseFilter, navigating] = useFilterNavigation(filter);
+  const [query, writeQuery] = useUrlSearch(search, shownFilter, navigating);
   const [announcement, setAnnouncement] = useState("");
   /** El proyecto recién editado, hasta saber si su fila sigue a la vista. */
   const saved = useRef<ProjectSettings | null>(null);
@@ -160,17 +168,18 @@ function reflects(project: ProjectListItem, settings: ProjectSettings): boolean 
 
 /**
  * PR-95: el filtro navega con `router.push`, así cada uno es una entrada del
- * historial (D-P1-6). Mientras la página llega, ya se ve lo elegido.
+ * historial (D-P1-6). Mientras la página llega, ya se ve lo elegido; el
+ * tercer valor dice si la navegación sigue en vuelo.
  */
 function useFilterNavigation(
   filter: ProjectFilter,
-): readonly [ProjectFilter, (next: ProjectFilter, search: string) => void] {
+): readonly [ProjectFilter, (next: ProjectFilter, search: string) => void, boolean] {
   const router = useRouter();
   const [shown, show] = useOptimistic<ProjectFilter, ProjectFilter>(
     filter,
     (_, next) => next,
   );
-  const [, startTransition] = useTransition();
+  const [navigating, startTransition] = useTransition();
 
   function choose(next: ProjectFilter, search: string): void {
     if (next === shown) {
@@ -182,7 +191,12 @@ function useFilterNavigation(
     });
   }
 
-  return [shown, choose];
+  return [shown, choose, navigating];
+}
+
+/** El valor de `buscar` que deja una búsqueda: vacía, sin el parámetro. */
+function echoOf(search: string): string | null {
+  return search === "" ? null : search;
 }
 
 /**
@@ -193,10 +207,14 @@ function useFilterNavigation(
  * Next sincroniza `useSearchParams` en una transición, así que la URL de una
  * tecla puede llegar después de la tecla siguiente. Los valores escritos que
  * todavía no llegaron son ecos propios y no se copian al campo.
+ *
+ * Con la navegación del filtro en vuelo, un `replaceState` la cancelaría: lo
+ * escrito queda en el campo y pasa a la URL cuando la navegación se asienta.
  */
 function useUrlSearch(
   initial: string,
   filter: ProjectFilter,
+  navigating: boolean,
 ): readonly [string, (next: string) => void] {
   const params = useSearchParams();
   const fromUrl = params.get("buscar");
@@ -215,10 +233,41 @@ function useUrlSearch(
     }
   }
 
+  // Lo escrito mientras viajaba la navegación todavía no está en la URL.
+  const unwritten = (fromUrl ?? "") !== query;
+  const [wasNavigating, setWasNavigating] = useState(navigating);
+  if (navigating !== wasNavigating) {
+    setWasNavigating(navigating);
+    // Al asentarse, lo que el efecto escribe es un eco propio.
+    if (!navigating && unwritten) {
+      setEchoes([...echoes, echoOf(query)]);
+    }
+  }
+
+  function replaceUrl(next: string): void {
+    window.history.replaceState(null, "", projectsHref({ filter, search: next }));
+  }
+
+  const writeUnwritten = useEffectEvent(() => {
+    if (unwritten) {
+      replaceUrl(query);
+    }
+  });
+
+  // Al asentarse la navegación; al escribir sin navegación, lo hace `write`.
+  useEffect(() => {
+    if (!navigating) {
+      writeUnwritten();
+    }
+  }, [navigating]);
+
   function write(next: string): void {
     setQuery(next);
-    setEchoes((pending) => [...pending, next === "" ? null : next]);
-    window.history.replaceState(null, "", projectsHref({ filter, search: next }));
+    if (navigating) {
+      return;
+    }
+    setEchoes((pending) => [...pending, echoOf(next)]);
+    replaceUrl(next);
   }
 
   return [query, write];
