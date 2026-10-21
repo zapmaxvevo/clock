@@ -141,7 +141,13 @@ export type ReportRequest = {
  * valor por omisión: una llamada que no elige modo no compila.
  */
 type ReadMode = {
-  /** D-MCPE-4: un id fuera de su catálogo corta en lugar de ignorarse (D-R4-5). */
+  /**
+   * D-MCPE-4: las dos reglas del modo del asistente. Sin
+   * `timeEntry.others.view`, un id de persona ajeno corta con `forbidden` antes
+   * de leer (`checkOwnPeople`); y un id de persona, proyecto o cliente fuera de
+   * su catálogo corta con `not_found` en lugar de ignorarse como en la página
+   * (D-R4-5, `checkStrictFilters`).
+   */
   readonly strictFilters: boolean;
   /** D-R3-6, D-MCPE-5: el tope de filas de los niveles. */
   readonly maxRows: number;
@@ -165,7 +171,8 @@ const ASSISTANT_READ: ReadMode = {
   chart: false,
 };
 
-function workspaceResource(actor: Actor): WorkspaceResource {
+/** El recurso de `report.view` y de los permisos del workspace de quien mira. */
+export function workspaceResource(actor: Actor): WorkspaceResource {
   return { kind: "workspace", workspaceId: actor.workspaceId };
 }
 
@@ -836,14 +843,8 @@ type ReadPlan = {
   readonly filters: ReportFilters;
   /** Los cortes de `span` del gráfico, en la granularidad del período (D-R5-4). */
   readonly chartPlan: ChartPlan;
-  /** D-R7-3, D-MCPE-6: con el tope de duración por sentencia. */
-  readonly statementTimeout: boolean;
-  /** D-MCPE-4: un id fuera de su catálogo corta (`checkStrictFilters`). */
-  readonly strictFilters: boolean;
-  /** D-R3-6, D-MCPE-5: el tope de filas de los niveles. */
-  readonly maxRows: number;
-  /** D-MCPE-6: si lee las barras del gráfico. */
-  readonly chart: boolean;
+  /** El de la puerta de entrada: los filtros estrictos, los topes y el gráfico. */
+  readonly mode: ReadMode;
   /** D-R6-2: la exportación que las pide lee además las entradas; la página no. */
   readonly entries: boolean;
   /** D-R9-5: la opción efectiva, que solo llega con el alcance `everyone`. */
@@ -927,7 +928,7 @@ async function readReport(
 ): Promise<ReportRead> {
   // S3, D-R7-3, D-MCPE-6: toda exportación y todo resumido del asistente
   // corren con tope de duración, lean o no las entradas.
-  if (plan.statementTimeout) {
+  if (plan.mode.statementTimeout) {
     await reportRepository.limitStatementTime(REPORT_EXPORT_STATEMENT_TIMEOUT_MS, tx);
   }
   const catalog = await getProjectFilterCatalog(tx, actor);
@@ -940,7 +941,7 @@ async function readReport(
   const people = workspacePeople === null ? null : toPersonOptions(workspacePeople);
   const filters = effectiveFiltersOf(plan.filters, catalog, people);
   // D-MCPE-4: la comprobación y la lectura son la misma foto.
-  if (plan.strictFilters) {
+  if (plan.mode.strictFilters) {
     checkStrictFilters(plan.filters, filters, scope);
   }
   const filter = entryFilterOf(filters);
@@ -953,7 +954,7 @@ async function readReport(
       : [];
   const levels = await readLevelsWithinLimit(
     plan.levels.length,
-    plan.maxRows,
+    plan.mode.maxRows,
     (depth, limit) =>
       reportRepository.totalsByLevels(
         readScope,
@@ -980,7 +981,7 @@ async function readReport(
           seconds: first.reduce((sum, row) => sum + row.seconds, 0),
           billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
         };
-  const chart = plan.chart
+  const chart = plan.mode.chart
     ? await reportRepository.totalsByBucket(
         readScope,
         { span: plan.span, filter, ...plan.chartPlan },
@@ -1166,10 +1167,7 @@ async function readReportState(
         buckets,
         filters: request.filters,
         chartPlan,
-        statementTimeout: mode.statementTimeout,
-        strictFilters: mode.strictFilters,
-        maxRows: mode.maxRows,
-        chart: mode.chart,
+        mode,
         entries: read?.entries ?? false,
         peopleWithoutTime,
       }),
