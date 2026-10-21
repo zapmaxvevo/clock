@@ -289,12 +289,22 @@ vacío del owner y `renewWorkspace` se corta.
        error, fue en la rama `preview`: 10 constancias con cliente, de las pruebas de V-7).
        Las consultas quedaron en `/home/maxi/program/clock-ops/mcp-0019-previa-control.sql`.
        Push de `34ed2b5`, deploy y humo OK, y el usuario conectó el MCP en producción.
-     - **WS2a:** `ws2a-rebase` lo rebasa sobre `main`, regenera la migración como `0020`,
-       corre la final y arma `/home/maxi/program/clock-ops/ws2a-0020-do.sql`.
-     - **WS2b:** contrato en `clock-ws2b` (rama `fase2/ws2b-selector`, `507da74`), sin
-       migración ni ADR nuevo; en revisión de arquitectura. Preguntas al usuario: si el MCP
-       sigue en minutos con el completo y si el selector va sin el ejemplo «1:30» (WS-15).
-       Se implementa después de que WS2a esté en `main`.
+     - **WS2a mergeado en `main` en local** (`8466e94`, rama en `a16da9e`), sin pushear:
+       rebasado sobre el MCP, migración `0020` (`when` `1792584289697`), corrida final verde
+       (unidad 2589, integración 2187, build, e2e 262 en base nueva y reusada). Falta del
+       usuario en Neon `main`: previa, `/home/maxi/program/clock-ops/ws2a-0020-do.sql` y
+       control (`ws2a-0020-previa-control.sql`, previa con 2 workspaces); después el push.
+     - **WS2b** (`clock-ws2b`, rama `fase2/ws2b-selector`, sobre `8466e94`): contrato
+       revisado y corregido, sin migración ni ADR; preguntas respondidas (MCP en minutos;
+       selector «Completo (hh:mm:ss)» / «Compacto (h:mm)»). Backend hecho (`f560359`…
+       `5220d78`), e2e escrita (`c0099f3`), paridad (`d00040a`, WS-15 en curso). En curso:
+       `ws2b-front`. Después: suite entera, seis revisiones, correcciones, final, merge.
+     - **MCP para owner y admin** (mejora 5, pedida hoy, en paralelo): worktree
+       `clock-mcp-equipo`, rama `mejoras/mcp-equipo`. Contrato `mejoras-mcp-equipo.md`
+       revisado y corregido; ADR 0030 aceptado; §10 respondida como la recomendación
+       (`cf447a2`). Herramientas nuevas `list_people` y `summarize_hours`, sin migración.
+       Backend con V-1 OK y tipos en `c4e556f`; en curso `mcpe-back`, `mcpe-front`,
+       `mcpe-int` y `mcpe-e2e`. Después: seis revisiones (con seguridad), final, merge.
        **Decimoséptima sesión** (2026-10-20/21). **Cierre (2026-10-21 ~02:15 UTC):**
      - **En producción:** la `0018` de WS0 (control OK), WS1 (`2dc1452`) y `npm audit fix`
        (`467e730`, vite 8.3.4, CI verde). Falta del usuario la §6.6 de WS0: logs de Runtime
