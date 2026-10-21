@@ -1243,6 +1243,10 @@ encuentra la búsqueda; los comprueba la revisión de backend (D-WS2b-8).
 
 ## 11. Preguntas para el usuario
 
+**Respondidas por el usuario el 2026-10-21, las dos como la recomendación:** el
+MCP sigue devolviendo minutos enteros, y las opciones dicen «Completo
+(hh:mm:ss)» y «Compacto (h:mm)», sin el ejemplo de una hora y media.
+
 1. **¿Las herramientas del MCP siguen devolviendo minutos con el completo?**
    Hoy `list_entries` y las demás devuelven `durationMinutes` y `totalMinutes`,
    números enteros truncados; el asistente arma la respuesta. Con producción en
