@@ -418,6 +418,14 @@ export function consentSummary(clientName: string, email: string): string {
   return `${clientName} va a poder ver, cargar, editar y borrar tus horas, y leer tus proyectos, tareas y etiquetas, con tu cuenta (${email}).`;
 }
 
+/** D-MCPE-8: la oración de `/conectar` para quien ve las horas de los demás. */
+export const TEAM_CONSENT =
+  "Como propietario o administrador, también va a poder ver las horas de las demás personas del workspace.";
+
+/** D-MCPE-4: el `forbidden` de `summarize_hours` con el id de otra persona. */
+export const OTHERS_FORBIDDEN =
+  "Solo un propietario o un administrador ve las horas de otras personas.";
+
 /** §5.1: adónde vuelve, del `redirect_uri` firmado. */
 export function consentDestination(destination: string): string {
   return `Vuelve a: ${destination}`;
